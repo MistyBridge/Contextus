@@ -6,6 +6,7 @@ import { render, Box, Text, useInput } from "ink";
 import { randomUUID } from "node:crypto";
 import { git } from "./git.js";
 import { spawnTerminal } from "./claude.js";
+import { logEvent } from "./log.js";
 import {
   listSessions,
   worldlines,
@@ -117,7 +118,9 @@ function App({ cwd }: { cwd: string }) {
         anchor = s.node_uuid;
       }
 
-      spawnTerminal(cwd, sid);
+      const launchCmd = spawnTerminal(cwd, sid, (msg) => setStatus(`⚠ ${msg}`));
+      logEvent(cwd, "window_spawn", { sid, branch, cmd: launchCmd });
+      setStatus(`已发起窗口: ${launchCmd}`);
       const watcher = watchSession(cwd, { sid, branch, firstDecision, anchorNodeUuid: anchor }, (r) => {
         setStatus(`已提交 ${r.sha.slice(0, 12)} [${r.records} 条记录，世界线 ${branch}]`);
         refresh();

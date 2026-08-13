@@ -3,6 +3,7 @@
 // Claude Code 2.x 为原生二进制（bin/claude.exe），直接 spawn 零引号风险；
 // 老版本 cli.js / .cmd shim 仅作兜底。勿用 --debug（破坏恢复，实验 §4.3）。
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
@@ -85,24 +86,27 @@ export function runClaudeFresh(prompt: string, cwd: string, capture = false) {
 /**
  * 开新终端窗口运行交互式 claude --resume（用户主路径，v3.1）：
  * 真实 TTY——信任对话框/权限提示可正常应答。
- * wt（Windows Terminal）优先，cmd /c start 兜底（R27）。
+ * wt（Windows Terminal）优先：`--` 阻断 wt 自身的参数解析（否则 --resume 会被 wt 吞掉）；
+ * 无 wt 时用临时 bat + cmd start 兜底（避免 start 的嵌套引号/&& 解析问题，R27）。
  */
-export function spawnTerminal(cwd: string, sid: string): void {
+export function spawnTerminal(cwd: string, sid: string, onError?: (msg: string) => void): string {
   const wt = path.join(process.env.LOCALAPPDATA ?? "", "Microsoft", "WindowsApps", "wt.exe");
   if (fs.existsSync(wt)) {
-    const p = spawn(wt, ["-d", cwd, "cmd.exe", "/k", `claude --resume ${sid}`], {
+    // 官方语法（Microsoft Learn）：wt new-tab -d <起始目录> <可执行文件及其参数>
+    // 无 -- 分隔符；commandline = 可执行文件 + 参数透传
+    const p = spawn(wt, ["new-tab", "-d", cwd, "claude", "--resume", sid], {
       detached: true,
       stdio: "ignore",
     });
-    p.on("error", (e) => console.error(`wt 启动失败: ${e.message}`));
+    p.on("error", (e) => onError?.(`wt 启动失败: ${e.message}`));
     p.unref();
+    return `wt new-tab -d "${cwd}" claude --resume ${sid}`;
   } else {
-    const p = spawn(
-      "cmd.exe",
-      ["/c", "start", "", "cmd", "/k", `cd /d "${cwd}" && claude --resume ${sid}`],
-      { detached: true, stdio: "ignore", windowsVerbatimArguments: true },
-    );
-    p.on("error", (e) => console.error(`cmd start 启动失败: ${e.message}`));
+    const bat = path.join(os.tmpdir(), `ctxus-${sid.slice(0, 8)}.bat`);
+    fs.writeFileSync(bat, `@echo off\r\ncd /d "${cwd}"\r\nclaude --resume ${sid}\r\n`);
+    const p = spawn("cmd.exe", ["/c", "start", "", bat], { detached: true, stdio: "ignore" });
+    p.on("error", (e) => onError?.(`cmd start 启动失败: ${e.message}`));
     p.unref();
+    return `cmd start ${bat}`;
   }
 }

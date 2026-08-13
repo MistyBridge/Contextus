@@ -438,8 +438,12 @@ export function listSessions(cwd: string): Session[] {
 }
 
 export function worldlines(cwd: string): string[] {
-  const out = git(["for-each-ref", "--format=%(refname:short)", "refs/context"], cwd);
-  return out.split("\n").filter(Boolean);
+  // refname:short 只去掉 refs/ 前缀（得到 context/main），这里手动剥到世界线名
+  const out = git(["for-each-ref", "--format=%(refname)", "refs/context"], cwd);
+  return out
+    .split("\n")
+    .filter(Boolean)
+    .map((r) => r.replace(/^refs\/context\//, ""));
 }
 
 /** 新世界线命名：<父>-2、-3… */
