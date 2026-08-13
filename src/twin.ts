@@ -223,13 +223,11 @@ export function deltaRecords(cwd: string, sid: string, idx: Map<string, string>)
 }
 
 function maxSeqOf(cwd: string): number {
-  const dir = path.join(cwd, CTX, "records");
+  // git 视角（跨世界线）——新写入的序号必须超过所有已提交序号，避免碰撞
   let max = 0;
-  if (fs.existsSync(dir)) {
-    for (const f of fs.readdirSync(dir)) {
-      const m = f.match(/^(\d+)-/);
-      if (m) max = Math.max(max, parseInt(m[1], 10));
-    }
+  for (const { line } of contextFilesFromGit(cwd, "records")) {
+    const m = path.basename(line).match(/^(\d+)-/);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
   }
   return max;
 }
@@ -349,19 +347,34 @@ function freshRun(cwd: string, prompt: string): { rc: number; sid: string } {
 
 // ---------- UI 进入节点：物化 + 世界线落位 ----------
 
-/** 全部已知记录（.contextus/records + live 文件合并，按 uuid） */
+/**
+ * 各世界线 tip 的树中 .contextus/<sub> 下的文件（git 视角）。
+ * 工作区可能因进入历史节点被 checkout 回退，树/记录数据不得依赖工作区文件。
+ */
+function contextFilesFromGit(cwd: string, sub: string): Array<{ tip: string; line: string }> {
+  const out: Array<{ tip: string; line: string }> = [];
+  for (const b of worldlines(cwd)) {
+    const tip = git(["rev-parse", "--verify", `refs/context/${b}`], cwd, { allowFail: true }).trim();
+    if (!tip) continue;
+    for (const line of git(["ls-tree", "-r", "--name-only", tip, `.contextus/${sub}`], cwd)
+      .split("\n")
+      .filter(Boolean)) {
+      out.push({ tip, line });
+    }
+  }
+  return out;
+}
+
+/** 全部已知记录（各世界线 tip 树中的 records + live 文件合并，按 uuid） */
 function allRecords(cwd: string): Map<string, Record> {
   const map = new Map<string, Record>();
-  const dir = path.join(cwd, CTX, "records");
-  if (fs.existsSync(dir)) {
-    for (const f of fs.readdirSync(dir)) {
-      if (!f.endsWith(".json")) continue;
-      try {
-        const rec = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) as Record;
-        if (rec.uuid) map.set(rec.uuid, rec);
-      } catch {
-        /* 跳过坏文件 */
-      }
+  for (const { tip, line } of contextFilesFromGit(cwd, "records")) {
+    if (!line.endsWith(".json")) continue;
+    try {
+      const rec = JSON.parse(git(["show", `${tip}:${line}`], cwd)) as Record;
+      if (rec.uuid) map.set(rec.uuid, rec);
+    } catch {
+      /* 跳过坏文件 */
     }
   }
   // live 文件合并（未提交尾部）
@@ -421,18 +434,18 @@ export interface SessionEntry extends Session {
 }
 
 export function listSessions(cwd: string): Session[] {
-  const dir = path.join(cwd, CTX, "sessions");
-  const out: Session[] = [];
-  if (fs.existsSync(dir)) {
-    for (const f of fs.readdirSync(dir)) {
-      if (!f.endsWith(".json")) continue;
-      try {
-        out.push(JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) as Session);
-      } catch {
-        /* 跳过坏文件 */
-      }
+  // git 视角（各世界线 tip 树）——工作区 checkout 回退不影响树数据
+  const byUuid = new Map<string, Session>();
+  for (const { tip, line } of contextFilesFromGit(cwd, "sessions")) {
+    if (!line.endsWith(".json")) continue;
+    try {
+      const s = JSON.parse(git(["show", `${tip}:${line}`], cwd)) as Session;
+      byUuid.set(s.node_uuid, s);
+    } catch {
+      /* 跳过坏文件 */
     }
   }
+  const out = [...byUuid.values()];
   out.sort((a, b) => a.created_at.localeCompare(b.created_at));
   return out;
 }
