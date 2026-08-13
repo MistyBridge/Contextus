@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { git } from "./git.js";
+import { git, catFileBatch } from "./git.js";
 import { runClaude, runClaudeFresh } from "./claude.js";
 import { logEvent } from "./log.js";
 import { writeSession, type Session } from "./sessions.js";
@@ -373,18 +373,37 @@ function contextFilesFromGit(cwd: string, sub: string): Array<{ sha: string; lin
   return out;
 }
 
-/** 全部已知记录（git 历史全量 records + live 文件合并，按 uuid） */
+/** 批量读取 <sha>:<line> 对象内容（一次 cat-file --batch 进程） */
+function readObjects(cwd: string, entries: Array<{ sha: string; line: string }>): string[] {
+  return catFileBatch(cwd, entries.map((e) => `${e.sha}:${e.line}`));
+}
+
+/** 世界线 tip 指纹（会话内索引缓存失效依据：任何提交都会改变某个 tip） */
+function tipsFingerprint(cwd: string): string {
+  return git(["for-each-ref", "--format=%(refname) %(objectname)", "refs/context"], cwd);
+}
+
+// 会话内索引缓存：树数据构建一次，tip 指纹不变即复用（提交事件会改变 tip → 自动失效）
+let sessionsCache: { cwd: string; tips: string; sessions: Session[] } | null = null;
+let gitRecordsCache: { cwd: string; tips: string; records: Map<string, Record> } | null = null;
+
+/** 全部已知记录（git 历史全量 records + live 文件合并，按 uuid；会话内缓存） */
 function allRecords(cwd: string): Map<string, Record> {
+  const fp = tipsFingerprint(cwd);
+  if (gitRecordsCache && gitRecordsCache.cwd === cwd && gitRecordsCache.tips === fp) {
+    return new Map(gitRecordsCache.records); // 副本防外部修改
+  }
   const map = new Map<string, Record>();
-  for (const { sha, line } of contextFilesFromGit(cwd, "records")) {
-    if (!line.endsWith(".json")) continue;
+  const entries = contextFilesFromGit(cwd, "records").filter((e) => e.line.endsWith(".json"));
+  for (const text of readObjects(cwd, entries)) {
     try {
-      const rec = JSON.parse(git(["show", `${sha}:${line}`], cwd)) as Record;
+      const rec = JSON.parse(text) as Record;
       if (rec.uuid) map.set(rec.uuid, rec);
     } catch {
       /* 跳过坏文件 */
     }
   }
+  gitRecordsCache = { cwd, tips: fp, records: new Map(map) };
   // live 文件合并（未提交尾部）
   if (fs.existsSync(sessionDir(cwd))) {
     for (const f of fs.readdirSync(sessionDir(cwd))) {
@@ -443,11 +462,16 @@ export interface SessionEntry extends Session {
 
 export function listSessions(cwd: string): Session[] {
   // 唯一不变的索引（git 历史全量）——任何操作后全部可执行节点仍可索引
+  // 会话内缓存：tip 指纹不变即复用（提交/分支/drop 会改变指纹 → 自动失效重建）
+  const fp = tipsFingerprint(cwd);
+  if (sessionsCache && sessionsCache.cwd === cwd && sessionsCache.tips === fp) {
+    return sessionsCache.sessions;
+  }
   const byUuid = new Map<string, Session>();
-  for (const { sha, line } of contextFilesFromGit(cwd, "sessions")) {
-    if (!line.endsWith(".json")) continue;
+  const entries = contextFilesFromGit(cwd, "sessions").filter((e) => e.line.endsWith(".json"));
+  for (const text of readObjects(cwd, entries)) {
     try {
-      const s = JSON.parse(git(["show", `${sha}:${line}`], cwd)) as Session;
+      const s = JSON.parse(text) as Session;
       byUuid.set(s.node_uuid, s);
     } catch {
       /* 跳过坏文件 */
@@ -455,6 +479,7 @@ export function listSessions(cwd: string): Session[] {
   }
   const out = [...byUuid.values()];
   out.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  sessionsCache = { cwd, tips: fp, sessions: out };
   return out;
 }
 
