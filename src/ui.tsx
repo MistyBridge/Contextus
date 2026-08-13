@@ -48,14 +48,14 @@ function buildNodes(cwd: string): TreeNode[] {
   }
   const nodes: TreeNode[] = [];
   for (const s of sessions) {
-    if (!tips.has(s.branch_id)) continue; // 只显示有世界线 ref 的分支（孤儿会话忽略）
+    // 孤儿会话（世界线 ref 被 drop）同样可索引、可进入——用户原则：全部可执行节点永远可见
     nodes.push({ session: s, isTip: tips.get(s.branch_id) === s.node_uuid, depth: depthOf(s) });
   }
-  // 按分支分组排序展示：分支顺序 = refs 顺序，分支内按时间
+  // 按分支分组排序展示：分支顺序 = refs 顺序（孤儿排最后），分支内按时间
   const order = new Map(worldlines(cwd).map((b, i) => [b, i]));
   nodes.sort(
     (a, b) =>
-      (order.get(a.session.branch_id) ?? 0) - (order.get(b.session.branch_id) ?? 0) ||
+      (order.get(a.session.branch_id) ?? 999) - (order.get(b.session.branch_id) ?? 999) ||
       a.session.created_at.localeCompare(b.session.created_at),
   );
   return nodes;

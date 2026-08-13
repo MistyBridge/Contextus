@@ -6,7 +6,7 @@ import path from "node:path";
 import { git } from "./git.js";
 import { runClaude, runClaudeFresh } from "./claude.js";
 import { logEvent } from "./log.js";
-import { readSession, writeSession, type Session } from "./sessions.js";
+import { writeSession, type Session } from "./sessions.js";
 import { loadRecords, isQuestion, type Record } from "./records.js";
 import { encodeCwd, CLAUDE_PROJECTS } from "./paths.js";
 
@@ -152,14 +152,18 @@ function saveIndex(cwd: string, idx: Map<string, string>): void {
   fs.writeFileSync(indexFile(cwd), JSON.stringify(Object.fromEntries(idx), null, 2), "utf8");
 }
 
-/** 世界线 tip 的 session（经 tip commit 尾注 Node → sessions/<uuid>.json） */
+/** 世界线 tip 的 session（经 tip commit 尾注 Node → git show 读取——工作区可能 checkout 回退） */
 export function tipSession(cwd: string, branch: string): Session | null {
   const tip = git(["rev-parse", "--verify", `refs/context/${branch}`], cwd, { allowFail: true }).trim();
   if (!tip) return null;
   const body = git(["log", "-1", "--format=%B", tip], cwd);
   const m = body.match(/^Node: ([0-9a-f-]{36})/m);
   if (!m) return null;
-  return readSession(cwd, m[1]);
+  try {
+    return JSON.parse(git(["show", `${tip}:${CTX}/sessions/${m[1]}.json`], cwd)) as Session;
+  } catch {
+    return null;
+  }
 }
 
 /** 目标仓库当前 heads 分支（世界线 = 同名 context 分支） */
@@ -348,30 +352,34 @@ function freshRun(cwd: string, prompt: string): { rc: number; sid: string } {
 // ---------- UI 进入节点：物化 + 世界线落位 ----------
 
 /**
- * 各世界线 tip 的树中 .contextus/<sub> 下的文件（git 视角）。
- * 工作区可能因进入历史节点被 checkout 回退，树/记录数据不得依赖工作区文件。
+ * 唯一不变的索引 = git 历史（rev-list --all）——不可重写，任何 checkout/分支/drop
+ * 操作都不改变它，全部可执行节点永远可索引（含世界线 ref 被 drop 的孤儿节点）。
+ * 世界线 refs 仅是最小锚点，不参与节点索引。
  */
-function contextFilesFromGit(cwd: string, sub: string): Array<{ tip: string; line: string }> {
-  const out: Array<{ tip: string; line: string }> = [];
-  for (const b of worldlines(cwd)) {
-    const tip = git(["rev-parse", "--verify", `refs/context/${b}`], cwd, { allowFail: true }).trim();
-    if (!tip) continue;
-    for (const line of git(["ls-tree", "-r", "--name-only", tip, `.contextus/${sub}`], cwd)
+function allCommits(cwd: string): string[] {
+  return git(["rev-list", "--all"], cwd, { allowFail: true }).split(/\s+/).filter(Boolean);
+}
+
+/** 历史中某子目录下的文件（git 视角——工作区可能 checkout 回退，不得依赖工作区文件） */
+function contextFilesFromGit(cwd: string, sub: string): Array<{ sha: string; line: string }> {
+  const out: Array<{ sha: string; line: string }> = [];
+  for (const sha of allCommits(cwd)) {
+    for (const line of git(["ls-tree", "-r", "--name-only", sha, `.contextus/${sub}`], cwd)
       .split("\n")
       .filter(Boolean)) {
-      out.push({ tip, line });
+      out.push({ sha, line });
     }
   }
   return out;
 }
 
-/** 全部已知记录（各世界线 tip 树中的 records + live 文件合并，按 uuid） */
+/** 全部已知记录（git 历史全量 records + live 文件合并，按 uuid） */
 function allRecords(cwd: string): Map<string, Record> {
   const map = new Map<string, Record>();
-  for (const { tip, line } of contextFilesFromGit(cwd, "records")) {
+  for (const { sha, line } of contextFilesFromGit(cwd, "records")) {
     if (!line.endsWith(".json")) continue;
     try {
-      const rec = JSON.parse(git(["show", `${tip}:${line}`], cwd)) as Record;
+      const rec = JSON.parse(git(["show", `${sha}:${line}`], cwd)) as Record;
       if (rec.uuid) map.set(rec.uuid, rec);
     } catch {
       /* 跳过坏文件 */
@@ -434,12 +442,12 @@ export interface SessionEntry extends Session {
 }
 
 export function listSessions(cwd: string): Session[] {
-  // git 视角（各世界线 tip 树）——工作区 checkout 回退不影响树数据
+  // 唯一不变的索引（git 历史全量）——任何操作后全部可执行节点仍可索引
   const byUuid = new Map<string, Session>();
-  for (const { tip, line } of contextFilesFromGit(cwd, "sessions")) {
+  for (const { sha, line } of contextFilesFromGit(cwd, "sessions")) {
     if (!line.endsWith(".json")) continue;
     try {
-      const s = JSON.parse(git(["show", `${tip}:${line}`], cwd)) as Session;
+      const s = JSON.parse(git(["show", `${sha}:${line}`], cwd)) as Session;
       byUuid.set(s.node_uuid, s);
     } catch {
       /* 跳过坏文件 */
