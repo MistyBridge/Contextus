@@ -4,7 +4,7 @@
 // 老版本 cli.js / .cmd shim 仅作兜底。勿用 --debug（破坏恢复，实验 §4.3）。
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 type Launcher =
   | { kind: "exe"; exe: string } // 原生二进制直跑（首选）
@@ -80,4 +80,29 @@ export function runClaude(sid: string, prompt: string, cwd: string): number {
 /** 新会话直跑（不 --resume）；capture=true 时捕获输出（回归测试用） */
 export function runClaudeFresh(prompt: string, cwd: string, capture = false) {
   return spawnClaude(null, prompt, cwd, capture);
+}
+
+/**
+ * 开新终端窗口运行交互式 claude --resume（用户主路径，v3.1）：
+ * 真实 TTY——信任对话框/权限提示可正常应答。
+ * wt（Windows Terminal）优先，cmd /c start 兜底（R27）。
+ */
+export function spawnTerminal(cwd: string, sid: string): void {
+  const wt = path.join(process.env.LOCALAPPDATA ?? "", "Microsoft", "WindowsApps", "wt.exe");
+  if (fs.existsSync(wt)) {
+    const p = spawn(wt, ["-d", cwd, "cmd.exe", "/k", `claude --resume ${sid}`], {
+      detached: true,
+      stdio: "ignore",
+    });
+    p.on("error", (e) => console.error(`wt 启动失败: ${e.message}`));
+    p.unref();
+  } else {
+    const p = spawn(
+      "cmd.exe",
+      ["/c", "start", "", "cmd", "/k", `cd /d "${cwd}" && claude --resume ${sid}`],
+      { detached: true, stdio: "ignore", windowsVerbatimArguments: true },
+    );
+    p.on("error", (e) => console.error(`cmd start 启动失败: ${e.message}`));
+    p.unref();
+  }
 }

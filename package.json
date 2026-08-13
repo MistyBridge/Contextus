@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "description": "Contextus — Git Twin 会话状态运行时（MVP：Git Twin + 策略 Chunk + Session Tree）",
   "type": "module",
-  "bin": { "sm": "./dist/index.js" },
+  "bin": {
+    "sm": "./dist/index.js"
+  },
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
@@ -12,11 +14,14 @@
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "diff": "^8.0.0"
+    "diff": "^8.0.0",
+    "ink": "^5.2.1",
+    "react": "^18.3.1"
   },
   "devDependencies": {
     "@types/diff": "^7.0.0",
     "@types/node": "^22.0.0",
+    "@types/react": "^18.3.31",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }

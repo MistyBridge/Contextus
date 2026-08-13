@@ -109,6 +109,7 @@ d/e 等"兄弟"消息不在祖先链上，天然被排除；`--resume` 恢复时
 | subprocess 裸名解析失败 | `FileNotFoundError: [WinError 2]` | `shutil.which("claude")` 得全路径（`...\npm\claude.CMD` 可直跑） |
 | **`--debug` 破坏恢复** | 报 `No deferred tool marker found` | 排查 `--resume` 问题时勿用 `--debug`；普通恢复正常 |
 | 无头权限被忽略 | `Ignoring 143 permissions.allow entries...` | 该目录须先交互式接受信任（或改 `.claude.json` 的 `hasTrustDialogAccepted`） |
+| 信任接受需真实 TTY（2026-08-13 补充） | 经 `!` 前缀/管道执行 `claude` 时 stdin 非 TTY → 自动退化为 `--print` 模式（报 `Input must be provided...`），信任对话框不会出现 | 必须在真实终端窗口交互式运行 `claude` 接受信任；twin-init 已内置 hasTrustDialogAccepted 检测并警告 |
 
 ---
 

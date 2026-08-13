@@ -16,10 +16,16 @@ import {
   type Record,
 } from "./records.js";
 import { Store, findSessionFile } from "./store.js";
+import { twinInit, isTwin, askTurn } from "./twin.js";
+import { runUi } from "./ui.js";
 
-const USAGE = `Contextus MVP (M0) — 独立 store 模式
+const USAGE = `Contextus MVP — Twin 模式（在目标仓库内执行）
 
 用法:
+  sm twin-init                               启用 Twin（.contextus/ + 隔离四层权限 + 日志）
+  sm ask "<问题>"                             执行一轮交互，轮后自动提交（代码 + 记录 + 日志）
+
+独立 store 模式（实验回归用）:
   sm list                                    列出所有会话
   sm tree <sid>                              显示会话树
   sm branch <sid> <节点> "<问题>" [--branch <名>]   从节点分支新会话并执行
@@ -28,7 +34,7 @@ const USAGE = `Contextus MVP (M0) — 独立 store 模式
   sm check <sid> <节点>                       物化一致性校验（store vs JSONL 祖先链）
 
 节点定位: <数字> = 第 N 个用户提问 | <uuid> | last
-选项: --store <目录>  指定 store 仓库（默认 ./store，可用 CONTEXTUS_STORE 覆盖）
+选项: --store <目录>  指定独立 store 仓库（默认 ./store，可用 CONTEXTUS_STORE 覆盖）
 `;
 
 function die(msg: string): never {
@@ -282,6 +288,18 @@ function main(): void {
 
   try {
     switch (cmd) {
+      case "twin-init":
+        twinInit(process.cwd());
+        console.log(`已启用 Twin: ${path.join(process.cwd(), ".contextus")}（隔离四层权限已写入 .claude/settings.json）`);
+        break;
+      case "ask":
+        if (!rest[0]) die('ask 需要 "<问题>"');
+        if (!isTwin(process.cwd())) die("当前仓库未启用 Twin（先运行 sm twin-init）");
+        process.exitCode = askTurn(process.cwd(), rest[0]);
+        break;
+      case "ui":
+        runUi(process.cwd());
+        break;
       case "list":
         cmdList();
         break;

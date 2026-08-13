@@ -1,4 +1,4 @@
-# Contextus MVP 技术方案 v3.0（Git Twin + 最简策略 Chunk）
+# Contextus MVP 技术方案 v3.1（Git Twin + 最简策略 Chunk + Session Tree UI）
 
 > **v2（2026-08-13，用户决策）**：MVP 聚焦 **Git Twin**——代码世界与 Agent 会话世界在同一 git 仓库并存、独立演进、双向绑定。
 > **v2.1（同日）**：增加**最简 Chunk**——单一全局策略 Chunk（项目约束 + 用户规则），跨分支共享、版本化。
@@ -10,24 +10,26 @@
 > **v2.7（同日）**：规则注入改为**增量注入**——只补 diff 而非全文（历史中已嵌旧规则，补全文会造成新旧并存矛盾）；修改/删减条目用 **【禁止】指令**中和历史旧文本；规则文档条目化，注入质量靠文档一致性比对（条目级 diff）控制。
 > **v2.8（同日）**：**Chunks 文件夹模型**——规则由 `.contextus/Chunks/` 文件夹管理（工作区真相）；版本 = 该文件的 git 历史（移除 v 文件与 Registry）；同步 = 比对「历史节点 commit 中的 Chunks 快照」与「工作区 Chunks」（即比对 Chunks 与最近提交的 Chunks），差异注入增量。
 > **v3.0（同日，架构审计整改）**：① code_after 字段移除（自引用字段物理上无法写入自身 commit，改由 uuid2commit 索引派生）② 失败轮一律提交（新增 T10，不变式全路径成立）③ 隔离升级四层（Bash deny + 文件工具 deny `.git/**`/`.contextus` 敏感路径 + sm.py deny + 审计兜底）④ checkout 改为**查看模式**（detached、不建线不提交，ask 时才建新世界线）⑤ rename 仅限 tip；中间节点重写不做 git rebase，由 Phase 2「重建分支」替代（压缩链上下文 → 新树 → 挂 skill/mcp 之下）⑥ P1/P2 全部落文（并发锁、同步材料规模控制、delta 提取规则、回放抽样、非 ASCII 路径回归等）⑦ Chunks 编辑权确认**放行**（人下命令、Agent 修改）⑧ 技术栈定为 **TypeScript**（Node 22 LTS）。
+> **v3.1（同日，执行模型升级）**：**不使用无头模式作为用户主路径**——实现真实**树形会话 UI（TUI，ink）**：用户浏览会话树、选中节点 → 物化该节点上下文 → **开新终端窗口**运行交互式 `claude --resume`（真实 TTY：信任对话框/权限提示可正常应答，实验 §4.3 陷阱自然消解）。**提交时机 = 文件监控**：UI 后台监控会话 JSONL，每检测到一条新提问记录即提交上一轮（保持「一轮一 commit」不变式）；窗口关闭提交最后一轮。无头 `-p` 仅保留用于内部自动化与回归测试。
 > 上游材料：立项书（ChatGPT 讨论）+ 《Contextus_架构与实验记录》（2026-08 实测）。
-> 文档状态：v3.0，**已定稿**
+> 文档状态：v3.1，**已定稿**
 
 ---
 
 ## 1. 范围
 
-### 1.1 MVP 做什么：自研仅三个模块
+### 1.1 MVP 做什么：自研四模块
 
-**原则（用户定调）：尽可能复用 Claude Code 现有体系，只做必须做的最小内容。** 执行引擎、工具循环、权限、MCP、skills、system prompt 组装、会话文件格式、缓存机制全部原样复用（实验已验证的路线 B 边界）。Contextus 自研的只有三个模块：
+**原则（用户定调）：尽可能复用 Claude Code 现有体系，只做必须做的最小内容。** 执行引擎、工具循环、权限、MCP、skills、system prompt 组装、会话文件格式、缓存机制全部原样复用（实验已验证的路线 B 边界）。**执行形态 = 交互式 CLI 窗口**（用户主路径，真实 TTY）；无头 `-p` 仅用于内部自动化与回归。Contextus 自研四个模块：
 
 | 模块 | 范围 |
 |------|------|
 | **Git Twin** | 一仓两层 + 轮后自动提交 + 1:1 绑定 + 双世界恢复 + 运行日志（审计）+ 同步分支 |
 | **策略 Chunk** | 单一 Chunk `project_policy`（`.contextus/Chunks/` 文件夹管理，版本 = git 历史）：项目约束与用户规则，跨分支共享，回放用当前规则（增量注入） |
 | **Session Tree** | git 存储的会话树：分支 / 回溯 / 恢复（已验证的回合=commit 模型工程化） |
+| **Session Tree UI（TUI）** | ink 树形界面：浏览世界线/节点、选中节点 → 物化上下文 → 开新终端窗口进入该节点 CLI 会话；后台文件监控自动提交 |
 
-三模块协同构成最小闭环；Phase 2 及以上演进见 §7.3。
+四模块协同构成最小闭环；Phase 2 及以上演进见 §7.3。
 
 ### 1.2 核心价值：配置边界分支（用户例子）
 
@@ -46,21 +48,17 @@
 ### 1.3 核心闭环
 
 ```
-用户提问
+sm ui 启动树形界面（TUI）
   ↓
-(可选) 从任意历史节点分支/回溯（路线 B，已验证）
-      ├─ 普通分支：纯历史上下文 + 历史代码空间
-      └─ 同步分支 --sync-latest：历史上下文 + 最新代码空间（T8）
+浏览世界线 / 会话树，选中任意节点
   ↓
-物化：祖先链对话 + 规则比对（节点 Chunks 快照 vs 工作区 Chunks，不一致则注入增量）
+物化：祖先链对话 + 规则比对注入 → 写会话文件 → 开新终端窗口 claude --resume（交互模式）
+  ↓ 用户在窗口内一轮轮问答（信任/权限提示可正常应答）
+UI 后台监控会话 JSONL：检测到新提问 → 提交上一轮（代码 + 记录 + 日志 → 一个 commit）
+  ↓ 窗口关闭
+提交最后一轮（T10 规则不变）→ refs/heads 与 refs/context 同步前进（工作区干净）
   ↓
-Claude Code 在仓库 cwd 执行（工具链/权限/MCP 原样；本地 git 只读，gh/API 自由）
-  ↓ Agent 停止输出 = 一轮结束
-自动提交：本轮代码改动 + 会话记录 + 运行日志增量 → 一个 commit
-  ↓
-refs/heads/<branch> 与 refs/context/<branch> 同步前进（工作区干净）
-  ↓
-任意时刻：checkout 某会话 → 代码世界（=该 commit 树）+ 会话上下文双恢复 → 继续
+树界面实时刷新；任意历史节点可再次进入（回溯即分叉，旧世界线不动）
 ```
 
 ### 1.4 能力清单（MVP 验收面）
@@ -80,6 +78,7 @@ refs/heads/<branch> 与 refs/context/<branch> 同步前进（工作区干净）
 | C11 | 本地 git 读写分离：Agent 读命令可用、写命令全禁；gh/API 自由 | （twin-init 内建） |
 | C12 | 同步分支：历史上下文 + 最新代码空间，同步是新对话的环节 | `sm.py branch <uuid> "<问题>" --sync-latest` |
 | C13 | 维护操作：改名称 / 废弃世界线，每次改均产生审计记录 | `sm.py rename` / `drop` |
+| C14 | 树形 UI：浏览世界线/节点，选中节点 → 物化 → 开交互窗口 → 自动提交 | `sm ui` |
 
 ---
 
@@ -111,9 +110,14 @@ refs/heads/<branch> 与 refs/context/<branch> 同步前进（工作区干净）
 
 ## 3. 关键设计决策（拍板）
 
-### D1. 执行后端 = Claude Code CLI（路线 B）
+### D1. 执行后端 = Claude Code CLI（路线 B），交互窗口为主【v3.1 重写】
 
-已验证「伪造会话文件 + `claude -p --resume`」任意节点分支。runner 层封装，未来可换 SDK/API。执行 cwd = 仓库根（会话文件落在 `~/.claude/projects/<仓库路径编码>/`）。**「一轮」= 一次 `claude -p` 调用**：用户一问 → Agent 完整 agentic loop → 停止输出退出。
+已验证「伪造会话文件 + `--resume`」任意节点分支。执行形态分两路：
+
+- **用户主路径（v3.1）**：TUI 选中节点 → 物化上下文 → **开新终端窗口**运行交互式 `claude --resume <sid>`——真实 TTY：信任对话框、权限提示、交互式追问全部可应答（实验 §4.3 的无头信任陷阱自然消解）。cwd = 仓库根（会话文件落在 `~/.claude/projects/<仓库路径编码>/`）。
+- **自动化/回归路径**：无头 `claude -p --resume`（M0 已验证），仅用于测试与脚本，不做产品体验。
+
+「一轮」定义不变：用户一问 → Agent 一答 → 执行到任务结束 → 停止输出。交互模式下同一窗口可多轮问答，提交时机由文件监控决定（T2）。
 
 ### D2. 存储 = git，核心定义是「Commit-like 状态」而非「Git SHA」
 
@@ -122,7 +126,7 @@ refs/heads/<branch> 与 refs/context/<branch> 同步前进（工作区干净）
 ### T1. 主模式 = 一仓两层（目标代码仓库内）；独立 store 为降级路径
 
 - 同一个 `.git` 仓库：`refs/heads/*` + `refs/context/*` 指向同一串 commit（同一条 lineage，两层命名保留——未来若放开 Agent 自主提交，heads 可分化）。
-- `.contextus/` 目录**纳入版本管理**（不 gitignore）：随每轮 commit 提交，用户可直接查看会话世界。
+- `.contextus/` 目录**纳入版本管理**（不 gitignore）：随每轮 commit 提交，用户可直接查看会话世界。例外：`index/`（uuid2commit 派生缓存，可全量重建 R23）与 `.lock`（运行时锁）经 `.git/info/exclude` 排除——保证提交后工作区干净且索引永远最新。
 - 非仓库场景走独立 `store/` 仓库，同一套接口。
 
 ### T2. 提交模型与权限边界：本地 git 只读开放，一轮一 commit【v2.4 更新】
@@ -150,6 +154,8 @@ git update-ref refs/context/<branch> HEAD            # 双 ref 同步前进
 **运行日志（用户规则）**：项目运行时持续向 `.contextus/logs/runtime.log` 逐行追加事件（轮开始、claude 调用、轮结束、提交、规则比对结果、异常等）。效果：纯对话轮天然有提交内容（日志增量）；日志随 commit 入库，与 `git log` 互相印证，构成审计轨迹。
 
 提交后工作区干净：下一轮从干净状态开始。
+
+**交互模式提交时机（v3.1，用户定调）**：交互窗口内同一窗口可多轮问答。提交边界 = **文件监控**：UI 后台监控会话 JSONL，每检测到一条**新提问记录**即判定上一轮（一问一答）已完成 → 自动提交该轮（代码 + 记录 + 日志）；**窗口关闭时提交最后一轮**（完整或半成品，T10 失败轮规则不变）。「一轮一 commit」不变式在交互模式下依然成立。
 
 **并发锁（P1-1）**：`.contextus/.lock` 锁文件（pid + 时间戳 + 过期判定；Windows msvcrt 锁），`ask`/`checkout`/维护操作一律先取锁、占用即拒绝——防双终端并发 ask 引发 git 索引竞争。
 
@@ -354,10 +360,11 @@ D:\开发\Contextus\
 │   │                            #   uuid2commit 索引（T2/T3/T4）
 │   ├── policy.ts                # 策略 Chunk：Chunks 文件夹读写 + 条目级 diff + 文档一致性比对（T7）
 │   ├── sessions.ts              # Session 模型 + 树遍历（uuid/parentUuid 链）
-│   ├── twin.ts                  # Twin 核心：一轮生命周期（物化→执行→日志→轮后提交→ref 前进）
+│   ├── twin.ts                  # Twin 核心：一轮生命周期（物化→执行→日志→轮后提交→ref 前进）+ 提交监控
 │   ├── materialize.ts           # 物化：祖先链 + 规则增量注入 + 同步指令注入（T7/T8，路线 B 格式）
 │   ├── log.ts                   # 运行日志写入（逐行追加，审计轨迹）
-│   └── runner.ts                # claude -p --resume 执行对接（Windows 陷阱处理）
+│   ├── ui.ts                    # Session Tree UI（TUI，ink）：树浏览 + 节点进入（开交互窗口）
+│   └── runner.ts                # claude 执行对接（交互窗口 spawn + 无头 -p，Windows 陷阱处理）
 ├── package.json / tsconfig.json # Node 22 LTS + TypeScript；依赖最小（jsdiff）
 ├── tests/                       # 单元测试 + 升级回归（实验 §4.2 三用例自动化）
 └── benchmark/                   # Twin 验收场景 + 回放测试（1000 会话）
@@ -376,7 +383,8 @@ D:\开发\Contextus\
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
 | **M0 地基** | 项目 `git init` + 包骨架；sm.py/demo_git_tree.py 迁入；独立 store 模式全能力回归（list/tree/branch/exec，git 存储版） | 实验 §4.2 三用例 + 物化一致性测试全过；**cwd 编码在非 ASCII 路径（`D:\开发\Contextus`）下回归**（P2-1） |
-| **M1 Twin 写入** | `twin-init`（.contextus/ + settings.json 隔离四层权限 + 日志初始化 + 并发锁）；轮后自动提交（T2）；session.json + commit 命名与尾注（T3）；失败轮提交（T10）；ask 闭环 | 测试仓库：连续 3 轮 → 3 个 commit、双 ref 同步、工作区干净、Agent 写命令被拒而读命令/gh 可用、并发 ask 被锁拒绝 |
+| **M1 Twin 写入** | `twin-init`（.contextus/ + settings.json 隔离四层权限 + 日志初始化 + 并发锁）；轮后自动提交（T2）；session.json + commit 命名与尾注（T3）；失败轮提交（T10）；无头 ask 闭环（自动化路径） | 测试仓库：连续 3 轮 → 3 个 commit、双 ref 同步、工作区干净、Agent 写命令被拒而读命令/gh 可用、并发 ask 被锁拒绝 |
+| **M1.5 Session Tree UI** | `sm ui`（ink TUI）：世界线/节点树浏览；选中节点 → 物化 → 开新终端窗口交互式 `claude --resume`；后台文件监控：检测新提问 → 提交上一轮；窗口关闭 → 提交最后一轮 | 测试仓库：树显示正确；进入节点窗口上下文正确；监控提交逐轮产生 commit；窗口关闭后树刷新 |
 | **M2 Twin 恢复与查询** | `checkout`（双世界恢复 + 脏工作区守卫 + 新世界线）、`find`、`diff`、`tree`、`status`、`--sync-latest` 同步分支（T8）、维护操作 `rename`/`drop`（T9） | 场景 T1~T5、T7~T9 人工跑通 |
 | **M3 策略 Chunk** | `policy set/edit/log`（T7，Chunks 文件夹 + git 历史）；物化时文档一致性比对 + 增量注入（含【禁止】） | 场景 T6 跑通 |
 | **M4 验收** | 场景自动化 + 1000 会话回放（50 真执行）+ 升级回归脚本 + `cat-file --batch` 长链物化性能项 | §7 全部通过 |
@@ -428,6 +436,9 @@ D:\开发\Contextus\
 | R13 | 规则注入占 token（每分支首轮） | 增量注入（只补 diff 不补全文）进一步压缩；版本一致时不注入；缓存成本模型已明（实验 §6.3） |
 | R25 | 增量 diff 噪声：规则文档为自由文本时，条目 diff 产生碎片指令 | 规则文档条目化约定（每行一条，`policy set` 校验）；注入内容 CLI 输出预览，用户可复核 |
 | R26 | 【禁止】中和是启发式的：旧规则在历史中被多次引用/改写时无法彻底抹除 | 注入位置在历史之后、请求之前（recency 优先）；彻底解法 = Phase 2 重建分支/Compaction（新树不含旧规则） |
+| R27 | 窗口唤起平台差异：Windows Terminal（wt）缺失或版本差异 | wt 优先 + `cmd /c start` 兜底；唤起失败时输出手动命令提示（claude --resume <sid>） |
+| R28 | 监控提交滞后：新提问检测依赖文件写入时机；极端情况轮边界误判 | 轮询间隔 2s；窗口关闭时兜底提交最后一轮（不完整也提交，T10）；误判可由 rename/drop 维护通道修正 |
+| R29 | 多窗口并行：同一仓库多个交互窗口同时问答 → 提交串行化 | 并发锁（T2）：每次提交取锁；MVP 建议单窗口；多窗口完整支持属 Phase 2 |
 | R14 | **本地 git 写命令禁用后，任务需要写 git 时受限** | 边界明确：GitHub 托管走 gh/API（自由）；本地写 git 由用户或 Contextus 代执行；Phase 2 可选放开 + 混合提交模型 |
 | R15 | permissions 规则格式随 Claude Code 版本变化；读命令被误伤 | twin-init 写入 + M1 验证读写分离规则格式；升级回归覆盖 |
 | R16 | 运行日志无限增长 | 日志按轮分段、随 commit 入库后可截断（保留 tail）；压缩策略 Phase 2 |
@@ -442,11 +453,12 @@ D:\开发\Contextus\
 
 ---
 
-## 附录 A：决策速查（v2.8）
+## 附录 A：决策速查（v3.1）
 
-- 自研边界：仅 **Git Twin / 策略 Chunk / Session Tree** 三模块；其余全部复用 Claude Code 现有体系
+- 自研边界：**Git Twin / 策略 Chunk / Session Tree / Session Tree UI（TUI）** 四模块；其余全部复用 Claude Code 现有体系
+- 执行形态：**交互窗口为主**——`sm ui` 树界面选中节点 → 物化 → 开真实终端窗口 `claude --resume`（信任/权限可应答）；无头 `-p` 仅自动化/回归
+- 交互提交时机：文件监控——检测到新提问 → 提交上一轮；窗口关闭 → 提交最后一轮；「一轮一 commit」不变
 - 存储模型：**增删改查完备**（类比数据库）——常规路径不可变（新 commit/版本/会话）；改/删走维护通道（Contextus 显式操作：rename **仅限 tip** / drop，中间重写由 Phase 2「重建分支」替代，scrub 为 Phase 2）；每次改强制审计日志（before/after SHA + 原因），**日志本身只增不改**
-- 执行后端：Claude Code CLI 路线 B（已验证）；一轮 = 一次 `claude -p` 调用
 - 存储：git 一仓两层（主模式 = 目标代码仓库；独立 store 降级）
 - 权限：**隔离四层**——① Bash 写 git deny（读命令开放）② 文件工具 deny 编辑 `.git/**` 与 `.contextus` 敏感路径（Chunks 默认放行）③ Bash deny `sm.py` ④ 审计兜底；GitHub 云 git 自由（gh/API/Web），两者互不冲突；subprocess 绕过接受为 MVP 边界
 - 提交：轮后自动提交（add -A + commit --no-verify + 双 ref 前进）；一轮一 commit；commit 名称 = 用户请求前若干字（≤20 字），尾注 `Node: <uuid>`；并发锁 `.contextus/.lock`；失败轮一律提交（decision=failed + 日志）
@@ -458,7 +470,7 @@ D:\开发\Contextus\
 - 同步分支：`--sync-latest` = 历史上下文 + 最新代码空间；同步是新对话环节（Agent 只读 git 比较 + 编辑文件），历史节点不动
 - 规则：单一 `project_policy`，存于 **`.contextus/Chunks/` 文件夹**（条目化文件）；**版本 = git 历史快照**（无 v 文件/Registry）；更新 = 改文件，O(1)；回放用当前规则——比对「节点 commit 的 Chunks 快照 vs 工作区 Chunks」（含未入库改动），不一致则**注入增量**（新增 = 原文；修改 = 新文 + 【禁止】旧文；删除 = 【禁止】）；发送顺序 = 历史 → 规则增量 → 用户请求
 - 分支：严格单父；fork = 新 refs/context 支指向锚点 commit
-- 交付：TypeScript（Node 22 LTS + tsx 开发）+ CLI；REST/UI 后包
+- 交付：TypeScript（Node 22 LTS + tsx 开发）+ CLI + TUI（ink）；REST 后包
 - 环境基线：Windows 11 / Git Bash / Python 3 / Claude Code v2.1.197（升级须回归）
 
 ## 附录 B：已实测结论速查（自实验记录继承）
