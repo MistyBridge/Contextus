@@ -204,6 +204,7 @@ git update-ref refs/context/<branch> HEAD            # 双 ref 同步前进
 ```
 sm.py checkout <node_uuid|世界线名|last>    # last = 回到当前世界线 tip
   1. 守卫：工作区有未提交改动 → 拒绝（防覆盖；轮间用户自己的改动）
+     ——仅拦 .contextus 之外的改动：Contextus 自身日志/派生数据尾迹随下轮提交，不构成阻塞
   2. git checkout --detach <该节点 commit>   # 查看模式：落位（工作区 = 节点代码世界）
   3. 物化上下文备用；status 显示「查看模式 @ 节点 X」
   4. 纯查看到此为止——无世界线、无 commit

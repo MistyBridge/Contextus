@@ -85,9 +85,18 @@ function App({ cwd }: { cwd: string }) {
 
   const enterNode = useCallback(
     (node: TreeNode) => {
-      // 脏工作区守卫（R9）
-      if (git(["status", "--porcelain"], cwd).trim() !== "") {
-        setStatus("⚠ 工作区有未提交改动，请先清理（stash/commit）再进入节点");
+      // 脏工作区守卫（R9）：只拦用户的代码改动；.contextus 自身尾迹（日志/派生数据）
+      // 随下一轮提交入库，不构成阻塞
+      const dirty = git(["status", "--porcelain"], cwd)
+        .split("\n")
+        .filter((l) => l.trim() && !l.includes(".contextus/"));
+      if (dirty.length > 0) {
+        setStatus(
+          `⚠ 工作区有未提交改动（${dirty.length} 项），请先清理（stash/commit）再进入节点：${dirty
+            .slice(0, 3)
+            .map((l) => l.trim())
+            .join("；")}`,
+        );
         return;
       }
       const s = node.session;
