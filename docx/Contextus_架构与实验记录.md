@@ -104,6 +104,7 @@ d/e 等"兄弟"消息不在祖先链上，天然被排除；`--resume` 恢复时
 |------|------|------|
 | **会话查找是 cwd 作用域** | 在错误 cwd 下 `--resume` 报 `No conversation found` | 文件必须放在 `~/.claude/projects/<当前cwd编码>/`，且在该 cwd 下运行 claude |
 | **cwd 编码规则** | 冒号也要编码成 `-`：`C:\Users\admin` → `C--Users-admin`（**双**横线） | `encode_cwd = cwd.replace(":", "-").replace("\\", "-")` |
+| **cwd 编码规则（2026-08-13 修正）** | 规则比初版更宽：**每个非字母数字字符 → 一个 `-`**（每个 CJK 字符单独占一个 `-`）。`D:\开发\Contextus` → `D-----Contextus`（: + \ + 开 + 发 + \ = 5 个 `-`，已实测） | `encode_cwd = cwd.replace(/[^a-zA-Z0-9]/g, "-")` |
 | 会话文件前几行无 `cwd` 字段 | 读到的 cwd 为空 → 文件落错目录 | mode/permission-mode 行没有 cwd，扫描到第一个非空 cwd |
 | subprocess 裸名解析失败 | `FileNotFoundError: [WinError 2]` | `shutil.which("claude")` 得全路径（`...\npm\claude.CMD` 可直跑） |
 | **`--debug` 破坏恢复** | 报 `No deferred tool marker found` | 排查 `--resume` 问题时勿用 `--debug`；普通恢复正常 |

@@ -1,0 +1,23 @@
+{
+  "name": "contextus",
+  "version": "0.1.0",
+  "description": "Contextus — Git Twin 会话状态运行时（MVP：Git Twin + 策略 Chunk + Session Tree）",
+  "type": "module",
+  "bin": { "sm": "./dist/index.js" },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "diff": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
