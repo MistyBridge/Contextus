@@ -1,0 +1,29 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "effortLevel": "max",
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "sk-nXb6XVPDkp9oOpxsEHp7R9STrcub5HH83m7OuYZsq62X2hcx",
+    "ANTHROPIC_BASE_URL": "https://cf.api.fan",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "deepseek-v4-pro[1M]",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL_NAME": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-pro[1M]",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-pro[1M]",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME": "deepseek-v4-pro",
+    "ANTHROPIC_MODEL": "deepseek-v4-pro[1M]",
+    "CLAUDE_CODE_EFFORT_LEVEL": "max",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-v4-pro[1M]",
+    "DISABLE_AUTOUPDATER": "1",
+    "ENABLE_TOOL_SEARCH": "true"
+  },
+  "model": "fable",
+  "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
+  "theme": "dark"
+}

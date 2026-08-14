@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "agent-bus": {
+      "command": "node",
+      "args": [
+        "C:/Users/admin/.boos/mcp-proxy.js"
+      ]
+    },
+    "filesystem": {
+      "command": "node",
+      "args": [
+        "D:\\AI IDE\\CC_BOOS\\claudes\\.mcp\filesystem\\dist\\index.js",
+        "D:\\开发\\Contextus"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "node",
+      "args": [
+        "D:/AI IDE/CC_BOOS/claudes/.mcp/node_modules/@modelcontextprotocol/server-sequential-thinking/dist/index.js"
+      ]
+    },
+    "openviking": {
+      "type": "http",
+      "url": "http://192.168.2.200:1933/mcp",
+      "headers": {
+        "x-api-key": "Ym9vcy10ZWFt.YWRtaW4.ZjMxOWRmZGM0OTM5OWZjMWVjN2ZkNzY4NWQxOTk1MTg3NDdiZmRlZmQ2Mzc1NWMyMmUyYzVjZTI0MDRmODc0Zg"
+      }
+    },
+    "codegraph": {
+      "command": "node",
+      "args": [
+        "D:\\AI IDE\\CC_BOOS\\HR\u0007ssets\\mcps\\codegraph-main\\codegraph-main\\dist\bin\\codegraph.js",
+        "serve",
+        "--mcp",
+        "--path",
+        "D:\\开发\\Contextus"
+      ]
+    }
+  }
+}
