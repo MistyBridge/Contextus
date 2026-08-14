@@ -3,7 +3,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { git, catFileBatch } from "./git.js";
+import { buildRuleInjection, policyHash, readPolicyWorktree } from "./policy.js";
 import { runClaude, runClaudeFresh } from "./claude.js";
 import { logEvent } from "./log.js";
 import { writeSession, type Session } from "./sessions.js";
@@ -279,6 +281,7 @@ export function commitDelta(
 
     // session.json（code_after 由索引派生，不落存储——v3.0）
     if (nodeUuid) {
+      const wl = readPolicyWorktree(cwd);
       writeSession(cwd, {
         node_uuid: nodeUuid,
         parent_uuid: question.parentUuid ?? null,
@@ -287,7 +290,7 @@ export function commitDelta(
         decision: opts.decision,
         anchor_node_uuid: opts.anchorNodeUuid ?? null,
         claude_session_id: opts.sid,
-        chunks_hash: null, // M3 填充
+        chunks_hash: wl.length ? policyHash(wl) : null,
         code_before: codeBefore,
         user_input: opts.prompt,
         created_at: new Date().toISOString(),
@@ -324,10 +327,24 @@ export function askTurn(cwd: string, prompt: string): number {
   logEvent(cwd, "turn_start", { branch, prompt: prompt.slice(0, 80) });
   const tip = tipSession(cwd, branch);
 
+  // 规则增量注入（T7）：tip 路径 = 比对 tip commit 的 Chunks 快照 vs 工作区，差异追加到 live 文件
+  if (tip) {
+    const tipSha = git(["rev-parse", "--verify", `refs/context/${branch}`], cwd).trim();
+    const inj = ruleInjectionRecord(cwd, tipSha, tip.claude_session_id, lastRecordUuid(cwd, tip.claude_session_id));
+    if (inj) appendToSession(cwd, tip.claude_session_id, inj);
+  }
+
   const res = tip
     ? { rc: runClaude(tip.claude_session_id, prompt, cwd), sid: tip.claude_session_id }
     : freshRun(cwd, prompt);
   logEvent(cwd, "turn_end", { rc: res.rc });
+
+  // 新世界线首轮：claude 自建文件无法预先注入——轮后补注入，使下一轮起规则生效（MVP 边界）
+  if (!tip) {
+    const head = git(["rev-parse", "HEAD"], cwd).trim();
+    const inj = ruleInjectionRecord(cwd, head, res.sid, lastRecordUuid(cwd, res.sid));
+    if (inj) appendToSession(cwd, res.sid, inj);
+  }
 
   const records = deltaRecords(cwd, res.sid, idx);
   const decision: "initial" | "continue" | "failed" = res.rc !== 0 ? "failed" : tip ? "continue" : "initial";
@@ -598,10 +615,47 @@ export function dropWorldline(cwd: string, branch: string): { tip: string } {
 /** 同步指令（T8）：注入到物化链末尾的 user 消息，Agent 以只读 git 自行比较同步 */
 export function syncInstruction(histSha: string, latestSha: string): string {
   return (
-    `【同步指令】工作区当前是历史节点 ${histSha} 的代码。` +
+    `<contextus-sync> 【同步指令】工作区当前是历史节点 ${histSha} 的代码。` +
     `请先用只读 git（如 git diff ${histSha} ${latestSha} --stat）比较它与最新会话 ${latestSha} 的代码状态，` +
     `把工作区同步到最新代码状态（分批同步，并在回复中说明同步了什么），然后处理用户请求。`
   );
+}
+
+/**
+ * 规则增量注入记录（T7）：base 快照 vs 工作区 Chunks 不一致 → 注入增量。
+ * 内容以 <contextus-rule> 开头 → isQuestion 判定为 false，不影响节点锚定。
+ * 无差异（版本一致）→ null 不注入。
+ */
+export function ruleInjectionRecord(
+  cwd: string,
+  baseSha: string,
+  sid: string,
+  parentUuid: string | null,
+): Record | null {
+  const text = buildRuleInjection(cwd, baseSha);
+  if (!text) return null;
+  return {
+    type: "user",
+    uuid: randomUUID(),
+    parentUuid,
+    sessionId: sid,
+    cwd,
+    promptId: randomUUID(),
+    message: { role: "user", content: text },
+  } as Record;
+}
+
+/** live 会话文件当前最后一条记录的 uuid（注入记录的 parentUuid 锚点） */
+export function lastRecordUuid(cwd: string, sid: string): string | null {
+  const file = sessionFilePath(cwd, sid);
+  if (!fs.existsSync(file)) return null;
+  const recs = loadRecords(fs.readFileSync(file, "utf8"));
+  return recs[recs.length - 1]?.uuid ?? null;
+}
+
+/** 把注入记录追加到 live 会话文件末尾（tip 继续路径） */
+export function appendToSession(cwd: string, sid: string, rec: Record): void {
+  fs.appendFileSync(sessionFilePath(cwd, sid), JSON.stringify(rec) + "\n", "utf8");
 }
 
 // ---------- 提交监控（交互窗口，v3.1）----------

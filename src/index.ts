@@ -30,6 +30,8 @@ import {
   commitOf,
 } from "./twin.js";
 import { runUi } from "./ui.js";
+import { policyAppend, readPolicyWorktree, POLICY_NAME } from "./policy.js";
+import { logEvent } from "./log.js";
 
 const USAGE = `Contextus MVP — Twin 模式（在目标仓库内执行）
 
@@ -44,6 +46,8 @@ const USAGE = `Contextus MVP — Twin 模式（在目标仓库内执行）
   sm checkout <节点uuid|世界线名|last>         查看模式（detached，不建线不提交）
   sm rename <新名称>                          改当前世界线 tip 的 commit 名称（≤20 字）
   sm drop <世界线>                            废弃世界线（其节点仍可索引、可进入）
+  sm policy set "<条目>"                      追加一条规则（随下一轮提交入库，O(1)）
+  sm policy show / log                       查看当前规则 / git 历史版本
 
 独立 store 模式（实验回归用）:
   sm list                                    列出所有会话
@@ -396,6 +400,24 @@ function main(): void {
         {
           const r = dropWorldline(process.cwd(), rest[0]);
           console.log(`已废弃世界线 ${rest[0]}（tip ${r.tip.slice(0, 12)}）——其节点仍可索引、可进入`);
+        }
+        break;
+      case "policy":
+        if (!isTwin(process.cwd())) die("当前仓库未启用 Twin");
+        if (rest[0] === "set") {
+          if (!rest[1]) die('policy set 需要 "<条目>"');
+          policyAppend(process.cwd(), rest[1]);
+          logEvent(process.cwd(), "policy_set", { entry: rest[1] });
+          console.log("已追加规则条目（随下一轮提交入库；回放时自动比对注入）");
+        } else if (rest[0] === "show") {
+          const rules = readPolicyWorktree(process.cwd());
+          console.log(rules.length ? rules.map((r, i) => `${i + 1}. ${r}`).join("\n") : "（无规则）");
+        } else if (rest[0] === "log") {
+          console.log(
+            git(["log", "--oneline", "--", `.contextus/Chunks/${POLICY_NAME}`], process.cwd()) || "（无历史）",
+          );
+        } else {
+          die("policy 需要 set <条目> | show | log");
         }
         break;
       case "list":

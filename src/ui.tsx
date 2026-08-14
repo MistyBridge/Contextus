@@ -18,6 +18,9 @@ import {
   watchSession,
   isTwin,
   syncInstruction,
+  ruleInjectionRecord,
+  appendToSession,
+  lastRecordUuid,
 } from "./twin.js";
 import type { Session } from "./sessions.js";
 import type { Record } from "./records.js";
@@ -113,6 +116,10 @@ function App({ cwd }: { cwd: string }) {
         sid = s.claude_session_id;
         branch = s.branch_id;
         firstDecision = "continue";
+        // 规则增量注入（T7）：tip commit 的 Chunks 快照 vs 工作区 → 差异追加到 live 文件
+        const tipSha = git(["rev-parse", "--verify", `refs/context/${branch}`], cwd).trim();
+        const ruleInj = ruleInjectionRecord(cwd, tipSha, sid, lastRecordUuid(cwd, sid));
+        if (ruleInj) appendToSession(cwd, sid, ruleInj);
       } else {
         // 历史节点：回溯即分叉——建新世界线、物化上下文、新会话文件
         const sha = commitOf(cwd, s.node_uuid);
@@ -146,6 +153,9 @@ function App({ cwd }: { cwd: string }) {
             chain = [...chain, inst];
           }
         }
+        // 规则增量注入（T7）：发送顺序 = 历史 → （同步指令）→ 规则增量 → 用户请求
+        const ruleInj = ruleInjectionRecord(cwd, sha, sid, chain[chain.length - 1]?.uuid ?? null);
+        if (ruleInj) chain = [...chain, ruleInj];
         writeJsonl(sid, chain, cwd);
         firstDecision = "fork";
         anchor = s.node_uuid;
