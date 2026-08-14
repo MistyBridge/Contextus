@@ -166,10 +166,14 @@ test("view：查看模式 detached（不建线不提交）", async () => {
   await app.close();
 });
 
-test("守卫：脏工作区 409 / 锁冲突 423 / 活动窗口 409 / 节点不存在 400", async () => {
+test("守卫：脏工作区（view/fork 拦，tip 不拦）/ 锁冲突 423 / 活动窗口 409 / 节点不存在 400", async () => {
   const repo = initTwinRepo(BASE);
   const s1 = commitRound(repo, {
     sid: "sid-g", branch: "main", prompt: "第一问", records: round("第一问", null), decision: "initial",
+  });
+  const s2 = commitRound(repo, {
+    sid: "sid-g", branch: "main", prompt: "第二问",
+    records: round("第二问", s1.node), decision: "continue",
   });
 
   const app = createApp({
@@ -178,17 +182,29 @@ test("守卫：脏工作区 409 / 锁冲突 423 / 活动窗口 409 / 节点不�
     pollIntervalMs: 60_000,
   });
 
-  // 脏工作区（代码文件未提交）
+  // 脏工作区：view（checkout 路径）拦
   fs.writeFileSync(path.join(repo, "dirty.txt"), "x");
-  const dirty = await app.inject({ method: "POST", url: `/api/nodes/${s1.node}/enter`, payload: {} });
-  assert.equal(dirty.statusCode, 409);
-  assert.equal(dirty.json().kind, "dirty-workspace");
-  assert.ok(dirty.json().detail.includes("dirty.txt"), "detail 列出脏文件");
+  const dirtyView = await app.inject({ method: "POST", url: `/api/nodes/${s1.node}/view` });
+  assert.equal(dirtyView.statusCode, 409);
+  assert.equal(dirtyView.json().kind, "dirty-workspace");
+
+  // 脏工作区：fork（历史节点 enter，checkout 路径）拦
+  const dirtyFork = await app.inject({ method: "POST", url: `/api/nodes/${s1.node}/enter`, payload: {} });
+  assert.equal(dirtyFork.statusCode, 409);
+  assert.equal(dirtyFork.json().kind, "dirty-workspace");
+  assert.ok(dirtyFork.json().detail.includes("dirty.txt"), "detail 列出脏文件");
+
+  // 脏工作区：tip enter 不拦（不落地 checkout，未提交改动随下一轮 add -A 提交）
+  const tipEnter = await app.inject({ method: "POST", url: `/api/nodes/${s2.node}/enter`, payload: {} });
+  assert.equal(tipEnter.statusCode, 200, "tip 进入不受脏工作区守卫阻拦");
+  const close1 = await app.inject({ method: "POST", url: "/api/window/close" });
+  assert.equal(close1.statusCode, 200);
+  assert.equal(close1.json().committed, false, "无 live 记录不提交");
   fs.rmSync(path.join(repo, "dirty.txt"));
 
   // 锁占用
   fs.writeFileSync(path.join(repo, ".contextus", ".lock"), JSON.stringify({ pid: 1, ts: new Date().toISOString() }));
-  const locked = await app.inject({ method: "POST", url: `/api/nodes/${s1.node}/enter`, payload: {} });
+  const locked = await app.inject({ method: "POST", url: `/api/nodes/${s2.node}/enter`, payload: {} });
   assert.equal(locked.statusCode, 423);
   assert.equal(locked.json().kind, "locked");
   fs.rmSync(path.join(repo, ".contextus", ".lock"));
@@ -203,7 +219,7 @@ test("守卫：脏工作区 409 / 锁冲突 423 / 活动窗口 409 / 节点不�
   assert.equal(missing.json().kind, "bad-request");
 
   // 活动窗口冲突：enter 成功后 view 被拒
-  const ok = await app.inject({ method: "POST", url: `/api/nodes/${s1.node}/enter`, payload: {} });
+  const ok = await app.inject({ method: "POST", url: `/api/nodes/${s2.node}/enter`, payload: {} });
   assert.equal(ok.statusCode, 200);
   const conflict = await app.inject({ method: "POST", url: `/api/nodes/${s1.node}/view` });
   assert.equal(conflict.statusCode, 409);

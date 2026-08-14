@@ -103,14 +103,15 @@ export class SessionActions {
   /**
    * 进入节点：tip → 复用 live 会话继续；历史节点 → 回溯即分叉（物化 + 新世界线 + 新会话文件）。
    * 两者均开真实终端 + 启动 watchSession（检测新提问 → 提交上一轮）。
+   * 脏工作区守卫只拦 fork 路径（其 checkout 会覆盖工作区）：tip 进入不落地任何代码，
+   * 工作区未提交改动本就会随下一轮 add -A 提交——守卫是纯阻力，不设。
    */
   enter(nodeUuid: string, syncMode: boolean): EnterResult {
     this.requireIdle();
-    this.requireClean();
+    const s = listSessions(this.cwd).find((x) => x.node_uuid === nodeUuid);
+    if (!s) throw new ApiFail(`节点不存在: ${nodeUuid.slice(0, 8)}`, "bad-request");
+    if (!this.isTipNode(s)) this.requireClean(); // 仅 fork（checkout 路径）需要守卫
     return this.withLock(() => {
-      const s = listSessions(this.cwd).find((x) => x.node_uuid === nodeUuid);
-      if (!s) throw new ApiFail(`节点不存在: ${nodeUuid.slice(0, 8)}`, "bad-request");
-
       let sid: string;
       let branch: string;
       let isTip: boolean;

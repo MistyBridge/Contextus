@@ -2,3 +2,4 @@
 {"ts":"2026-08-14T12:03:53.203Z","event":"turn_start","branch":"main","prompt":"这是 Contextus 自举狗食的第一轮。请 Read 本仓库 package.json、docx 下两份文档与 server/web 目录结构，用一段话说明"}
 {"ts":"2026-08-14T12:04:37.277Z","event":"turn_end","rc":0}
 {"ts":"2026-08-14T12:04:38.133Z","event":"commit","decision":"initial","node":"43170fee-caa4-4b87-978a-9fc65bf2890d","records":30}
+{"ts":"2026-08-14T12:41:57.906Z","event":"window_spawn","sid":"a8f18830-46fe-485d-aae1-30ce12ec3219","branch":"main","cmd":"cmd start C:\\Users\\admin\\AppData\\Local\\Temp\\ctxus-a8f18830.bat"}
