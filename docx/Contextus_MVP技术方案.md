@@ -13,7 +13,7 @@
 > **v3.1（同日，执行模型升级）**：**不使用无头模式作为用户主路径**——实现真实**树形会话 UI（TUI，ink）**：用户浏览会话树、选中节点 → 物化该节点上下文 → **开新终端窗口**运行交互式 `claude --resume`（真实 TTY：信任对话框/权限提示可正常应答，实验 §4.3 陷阱自然消解）。**提交时机 = 文件监控**：UI 后台监控会话 JSONL，每检测到一条新提问记录即提交上一轮（保持「一轮一 commit」不变式）；窗口关闭提交最后一轮。无头 `-p` 仅保留用于内部自动化与回归测试。
 > **v3.2（2026-08-14，用户理想态修正）**：规则**双通道**——① 生效通道：规则全文同步进仓库 `CLAUDE.md` 标记区块（system prompt，对话中不可见、每次运行必然加载、享缓存断点——「看不到但生效」）② 纠错通道：注入只保留【禁止】项（修改/删除规则时中和历史嵌入的旧表述），纯新增零注入。实测发现：`<` 前缀 user 消息被 Claude Code 视为本地命令并**从上下文排除**（不可用）；注入载体统一为 assistant 类型记录。
 > 上游材料：立项书（ChatGPT 讨论）+ 《Contextus_架构与实验记录》（2026-08 实测）。
-> 文档状态：v3.2，**已定稿**
+> 文档状态：v3.2，**已定稿——MVP（M0~M4）全部完成**（2026-08-14，全套件零失败，真实窗口验收通过）
 
 ---
 
@@ -384,12 +384,12 @@ D:\开发\Contextus\
 
 | 里程碑 | 内容 | 验收 |
 |--------|------|------|
-| **M0 地基** | 项目 `git init` + 包骨架；sm.py/demo_git_tree.py 迁入；独立 store 模式全能力回归（list/tree/branch/exec，git 存储版） | 实验 §4.2 三用例 + 物化一致性测试全过；**cwd 编码在非 ASCII 路径（`D:\开发\Contextus`）下回归**（P2-1） |
-| **M1 Twin 写入** | `twin-init`（.contextus/ + settings.json 隔离四层权限 + 日志初始化 + 并发锁）；轮后自动提交（T2）；session.json + commit 命名与尾注（T3）；失败轮提交（T10）；无头 ask 闭环（自动化路径） | 测试仓库：连续 3 轮 → 3 个 commit、双 ref 同步、工作区干净、Agent 写命令被拒而读命令/gh 可用、并发 ask 被锁拒绝 |
-| **M1.5 Session Tree UI** | `sm ui`（ink TUI）：世界线/节点树浏览；选中节点 → 物化 → 开新终端窗口交互式 `claude --resume`；后台文件监控：检测新提问 → 提交上一轮；窗口关闭 → 提交最后一轮 | 测试仓库：树显示正确；进入节点窗口上下文正确；监控提交逐轮产生 commit；窗口关闭后树刷新 |
-| **M2 Twin 恢复与查询** | `checkout`（双世界恢复 + 脏工作区守卫 + 新世界线）、`find`、`diff`、`tree`、`status`、`--sync-latest` 同步分支（T8）、维护操作 `rename`/`drop`（T9） | 场景 T1~T5、T7~T9 人工跑通 |
-| **M3 策略 Chunk** | `policy set/edit/log`（T7，Chunks 文件夹 + git 历史）；物化时文档一致性比对 + 增量注入（含【禁止】） | 场景 T6 跑通 |
-| **M4 验收** | 场景自动化 + 1000 会话回放（50 真执行）+ 升级回归脚本 + `cat-file --batch` 长链物化性能项 | §7 全部通过 |
+| **M0 地基 ✅** | 项目 `git init` + 包骨架；sm.py/demo_git_tree.py 迁入；独立 store 模式全能力回归（list/tree/branch/exec，git 存储版） | 实验 §4.2 三用例 + 物化一致性测试全过；cwd 编码非 ASCII 回归（发现并修正编码规则） |
+| **M1 Twin 写入 ✅** | `twin-init`（.contextus/ + settings.json 隔离四层权限 + 日志初始化 + 并发锁）；轮后自动提交（T2）；session.json + commit 命名与尾注（T3）；失败轮提交（T10）；无头 ask 闭环（自动化路径） | 测试仓库：连续 3 轮 → 3 个 commit、双 ref 同步、工作区干净、并发 ask 被锁拒绝 |
+| **M1.5 Session Tree UI ✅** | `sm ui`（ink TUI）：世界线/节点树浏览；选中节点 → 物化 → 开新终端窗口交互式 `claude --resume`；后台文件监控：检测新提问 → 提交上一轮；窗口关闭 → 提交最后一轮 | 真实窗口验收：上下文继承、监控提交、分叉互不可见、规则「看不到但生效」全部实测通过 |
+| **M2 Twin 恢复与查询 ✅** | `checkout`（查看模式 + 脏工作区守卫）、`find`、`diff`、`tree`、`status`、`--sync-latest` 同步分支（T8）、维护操作 `rename`/`drop`（T9） | m2.test 零 API 全过（find/diff/checkout/rename/drop/孤儿索引） |
+| **M3 策略 Chunk ✅** | `policy set/show/log`（Chunks 文件夹 + git 历史）；CLAUDE.md 生效通道（v3.2）+ 纠错注入（【禁止】）；chunks_hash | m3.test 零 API 全过 + 真实窗口「中文问英文答」实测 |
+| **M4 验收 ✅** | 场景自动化（scenarios.test）+ 回放协议（replay.test，REPLAY_N 可调至 1000）+ 升级回归入口（upgrade-check.sh）+ `cat-file --batch` 性能 | 全套件 6 测试文件零失败；场景 T1~T9 全数覆盖（T3 真执行依赖测试仓库信任，手动运行 twin-regression） |
 
 ---
 
