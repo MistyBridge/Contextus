@@ -92,7 +92,12 @@ export function runClaudeFresh(prompt: string, cwd: string, capture = false) {
  */
 export function spawnTerminal(cwd: string, sid: string, onError?: (msg: string) => void): string {
   const bat = path.join(os.tmpdir(), `ctxus-${sid.slice(0, 8)}.bat`);
-  fs.writeFileSync(bat, `@echo off\r\ncd /d "${cwd}"\r\nclaude --resume ${sid}\r\n`);
+  // chcp 65001：窗口内显示 UTF-8 正常（cmd 默认 GBK 会让中文文件乱码——仅显示层，
+  // claude 本身按 UTF-8 读取不受影响）；claude 退出后窗口保留在 UTF-8 代码页
+  fs.writeFileSync(
+    bat,
+    `@echo off\r\nchcp 65001 >nul\r\ncd /d "${cwd}"\r\nclaude --resume ${sid}\r\n`,
+  );
   const wt = path.join(process.env.LOCALAPPDATA ?? "", "Microsoft", "WindowsApps", "wt.exe");
   const p = fs.existsSync(wt)
     ? spawn(wt, ["new-tab", bat], { detached: true, stdio: "ignore" })
