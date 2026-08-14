@@ -23,7 +23,7 @@ import {
 import type { Record } from "../src/records.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const BASE = path.join(ROOT, "tests", ".tmp-twin-repo");
+const BASE = path.join(ROOT, "tests", ".tmp-m2-repo"); // 每个测试文件独立命名空间（并发运行互不干扰）
 
 function freshRepo(): string {
   for (const cand of [BASE, `${BASE}-2`, `${BASE}-3`]) {
