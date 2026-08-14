@@ -4,4 +4,6 @@ store/
 tests/.tmp-twin-repo*/
 tests/.tmp-m2-repo*/
 tests/.tmp-m3-repo*/
+tests/.tmp-scn-repo*/
+tests/.tmp-replay-repo*/
 *.tsbuildinfo
