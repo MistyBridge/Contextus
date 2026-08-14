@@ -34,15 +34,22 @@ MVP（命令行 + 终端 TUI）已全部跑通并经真实窗口验收。**现�
 | 8 | **审计时间线** | 运行日志（runtime.log 事件流：轮开始/提交/规则变更/维护操作）+ git 历史互证 | 时间线视图：会话事件与 commit 交错展示，可筛选类型 |
 | 9 | **统计视角** | 每轮 token 用量记录在会话文件中（usage 字段，已入库） | 每节点/世界线的 token 成本汇总（可选，数据已在） |
 
-## 四、技术上下文（已有基础）
+## 四、技术上下文（已有基础 + 技术栈已定）
 
 - **核心层**：TypeScript / Node.js（22 LTS），CLI `sm` 已具备全部命令；逻辑模块化（twin / policy / sessions / records / git 封装）
 - **数据来源**：git 对象库（历史即索引）、`.contextus/`（会话世界文件）、`~/.claude/projects`（AI 会话文件）——**全部已封装好读取函数**
-- **对接方式（由你选择，建议 A）**：
-  - A. 本地 Node 服务 + 前端（同一 TS 仓库），服务直接复用核心模块，前端 React/任意现代栈
-  - B. 纯前端 + 直接调用 CLI 命令（子进程）
+- **技术栈（已定，全栈 TypeScript 单仓）**：
+
+```
+contextus/ 仓库（现有）
+├── src/             # 核心层（已有）：前端直接共享类型（Session/Record/CommitResult…）
+├── server/          # 本地 Node 服务（Fastify）：复用核心模块，JSON API + SSE 实时事件
+└── web/             # Vite + React 18 SPA：dev 代理本地服务，产物由服务托管
+```
+
+- **关键组件选型（建议，可微调）**：React Flow (XYFlow) 做世界线树（分支可视化主战场）、@git-diff-view / Monaco 做代码 diff、framer-motion 动画、Tailwind CSS + shadcn/ui 样式、xterm.js 终端（可选）
 - **平台**：Windows 11 优先（终端唤起、路径编码等坑已在核心层解决，前端无需关心）
-- **加分项**：git 图形化经验（如 GitKraken/SourceTree 类产品）、终端模拟器（xterm.js）、动效设计（framer-motion 类）、数据可视化（D3/ECharts）
+- **加分项**：git 图形化经验（GitKraken/SourceTree 类产品）、终端模拟器、动效设计、数据可视化（D3/ECharts）
 
 ## 五、交付物与验收
 
