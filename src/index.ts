@@ -16,7 +16,19 @@ import {
   type Record,
 } from "./records.js";
 import { Store, findSessionFile } from "./store.js";
-import { twinInit, isTwin, askTurn } from "./twin.js";
+import {
+  twinInit,
+  isTwin,
+  askTurn,
+  sessionOfCommit,
+  diffSessions,
+  checkoutView,
+  renameTip,
+  dropWorldline,
+  listSessions,
+  worldlines,
+  commitOf,
+} from "./twin.js";
 import { runUi } from "./ui.js";
 
 const USAGE = `Contextus MVP — Twin 模式（在目标仓库内执行）
@@ -24,6 +36,14 @@ const USAGE = `Contextus MVP — Twin 模式（在目标仓库内执行）
 用法:
   sm twin-init                               启用 Twin（.contextus/ + 隔离四层权限 + 日志）
   sm ask "<问题>"                             执行一轮交互，轮后自动提交（代码 + 记录 + 日志）
+  sm ui                                      树形界面：进入节点开交互窗口，监控自动提交
+  sm find <commit>                           代码提交 → 产生它的会话（无尾注 = 非会话提交）
+  sm diff <节点A> <节点B>                     两个会话的代码世界 diff
+  sm tree                                    会话树（CLI）
+  sm status                                  当前世界线 / 绑定状态
+  sm checkout <节点uuid|世界线名|last>         查看模式（detached，不建线不提交）
+  sm rename <新名称>                          改当前世界线 tip 的 commit 名称（≤20 字）
+  sm drop <世界线>                            废弃世界线（其节点仍可索引、可进入）
 
 独立 store 模式（实验回归用）:
   sm list                                    列出所有会话
@@ -242,7 +262,36 @@ function cmdBranch(
   return rc;
 }
 
-/** 物化一致性校验：store 物化 vs JSONL 祖先链逐 uuid 比对（demo_git_tree 验证逻辑） */
+function cmdTwinTree(cwd: string): void {
+  const refs = worldlines(cwd);
+  const sessions = listSessions(cwd);
+  console.log(`世界线: ${refs.length ? refs.join(", ") : "（无）"}`);
+  const order = new Map(refs.map((b, i) => [b, i]));
+  const sorted = [...sessions].sort(
+    (a, b) =>
+      (order.get(a.branch_id) ?? 999) - (order.get(b.branch_id) ?? 999) ||
+      a.created_at.localeCompare(b.created_at),
+  );
+  for (const s of sorted) {
+    const tip = refs.includes(s.branch_id) ? "" : "（孤儿）";
+    const sha = commitOf(cwd, s.node_uuid)?.slice(0, 8) ?? "—";
+    console.log(`  [${s.branch_id}]${tip} ${sha} ${s.decision.padEnd(8)} ${s.user_input.slice(0, 40)}`);
+  }
+}
+
+function cmdTwinStatus(cwd: string): void {
+  const branch = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd).trim();
+  const dirty = git(["status", "--porcelain"], cwd)
+    .split("\n")
+    .filter((l) => l.trim() && !l.includes(".contextus/"));
+  console.log(`HEAD: ${branch === "HEAD" ? "detached（查看模式）" : `heads/${branch}`}`);
+  if (branch !== "HEAD") {
+    const tip = git(["rev-parse", "--verify", `refs/context/${branch}`], cwd, { allowFail: true }).trim();
+    console.log(`世界线 ${branch} tip: ${tip.slice(0, 12)}`);
+  }
+  console.log(`世界线: ${worldlines(cwd).join(", ") || "（无）"}`);
+  console.log(`工作区: ${dirty.length ? `${dirty.length} 项未提交改动` : "干净（.contextus 尾迹除外）"}`);
+}
 function cmdCheck(sid: string, nodeArg: string, storeFlag: string | undefined): void {
   const found = findSessionFile(sid);
   if (!found) die(`找不到会话: ${sid}`);
@@ -299,6 +348,55 @@ function main(): void {
         break;
       case "ui":
         runUi(process.cwd());
+        break;
+      case "find":
+        if (!rest[0]) die("find 需要 <commit>");
+        if (!isTwin(process.cwd())) die("当前仓库未启用 Twin");
+        {
+          const s = sessionOfCommit(process.cwd(), rest[0]);
+          if (!s) console.log("非会话提交（无 Node 尾注）");
+          else
+            console.log(
+              `会话节点: ${s.node_uuid}\n世界线: ${s.branch_id}\ndecision: ${s.decision}\n提问: ${s.user_input}\n时间: ${s.created_at}`,
+            );
+        }
+        break;
+      case "diff":
+        if (!rest[0] || !rest[1]) die("diff 需要 <节点A> <节点B>");
+        if (!isTwin(process.cwd())) die("当前仓库未启用 Twin");
+        console.log(diffSessions(process.cwd(), rest[0], rest[1]) || "（两个会话代码世界相同）");
+        break;
+      case "tree":
+        if (!isTwin(process.cwd())) die("当前仓库未启用 Twin");
+        cmdTwinTree(process.cwd());
+        break;
+      case "status":
+        if (!isTwin(process.cwd())) die("当前仓库未启用 Twin");
+        cmdTwinStatus(process.cwd());
+        break;
+      case "checkout":
+        if (!rest[0]) die("checkout 需要 <节点uuid|世界线名|last>");
+        if (!isTwin(process.cwd())) die("当前仓库未启用 Twin");
+        {
+          const r = checkoutView(process.cwd(), rest[0]);
+          console.log(`查看模式 @ ${r.label}（commit ${r.commit.slice(0, 12)}）——不建线不提交；继续提问请用 sm ui 进入节点`);
+        }
+        break;
+      case "rename":
+        if (!rest[0]) die("rename 需要 <新名称（≤20 字）>");
+        if (!isTwin(process.cwd())) die("当前仓库未启用 Twin");
+        {
+          const r = renameTip(process.cwd(), rest[0]);
+          console.log(`已改名: ${r.before.slice(0, 12)} → ${r.after.slice(0, 12)}（索引更新 ${r.nodes} 条，审计日志已记录）`);
+        }
+        break;
+      case "drop":
+        if (!rest[0]) die("drop 需要 <世界线名>");
+        if (!isTwin(process.cwd())) die("当前仓库未启用 Twin");
+        {
+          const r = dropWorldline(process.cwd(), rest[0]);
+          console.log(`已废弃世界线 ${rest[0]}（tip ${r.tip.slice(0, 12)}）——其节点仍可索引、可进入`);
+        }
         break;
       case "list":
         cmdList();

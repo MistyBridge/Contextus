@@ -17,8 +17,10 @@ import {
   commitOf,
   watchSession,
   isTwin,
+  syncInstruction,
 } from "./twin.js";
 import type { Session } from "./sessions.js";
+import type { Record } from "./records.js";
 
 interface TreeNode {
   session: Session;
@@ -66,6 +68,7 @@ function App({ cwd }: { cwd: string }) {
   const [selected, setSelected] = useState(0);
   const [win, setWin] = useState<WindowState | null>(null);
   const [status, setStatus] = useState<string>("");
+  const [syncMode, setSyncMode] = useState(false); // T8：历史上下文 + 最新代码空间
 
   const refresh = useCallback(() => setNodes(buildNodes(cwd)), [cwd]);
   useEffect(() => {
@@ -118,10 +121,31 @@ function App({ cwd }: { cwd: string }) {
           return;
         }
         branch = autoBranchName(cwd, s.branch_id);
-        git(["checkout", "-q", "-b", branch, sha], cwd); // heads 新支落位（代码世界）
+        git(["branch", "-q", branch, sha], cwd); // 新 heads 支
         git(["update-ref", `refs/context/${branch}`, sha], cwd);
-        const chain = materializeNode(cwd, s, false);
+        // 只回退代码世界（.contextus 工作区保留——日志尾迹不被覆盖），
+        // 然后 symbolic-ref 附着到新支（checkout <branch> -- <path> 形式不切换分支）
+        git(["checkout", "-q", sha, "--", ".", ":(exclude).contextus"], cwd);
+        git(["symbolic-ref", "HEAD", `refs/heads/${branch}`], cwd);
+        let chain = materializeNode(cwd, s, false);
         sid = randomUUID();
+        if (syncMode) {
+          // T8：历史上下文 + 最新代码空间——同步指令注入为链尾 user 消息（历史节点不动）
+          const latest = tipSession(cwd, s.branch_id);
+          const latestSha = latest ? commitOf(cwd, latest.node_uuid) : null;
+          if (latestSha) {
+            const inst: Record = {
+              type: "user",
+              uuid: randomUUID(),
+              parentUuid: chain[chain.length - 1]?.uuid ?? undefined,
+              sessionId: sid,
+              cwd,
+              promptId: randomUUID(),
+              message: { role: "user", content: syncInstruction(sha, latestSha) },
+            };
+            chain = [...chain, inst];
+          }
+        }
         writeJsonl(sid, chain, cwd);
         firstDecision = "fork";
         anchor = s.node_uuid;
@@ -148,6 +172,7 @@ function App({ cwd }: { cwd: string }) {
     if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
     if (key.downArrow) setSelected((i) => Math.min(nodes.length - 1, i + 1));
     if (key.return && nodes[selected]) enterNode(nodes[selected]);
+    if (input === "s") setSyncMode((v) => !v);
     if (input === "r") refresh();
     if (input === "q") process.exit(0);
   });
@@ -181,7 +206,7 @@ function App({ cwd }: { cwd: string }) {
       })}
       <Box marginTop={1}>
         <Text dimColor>
-          ↑↓ 选择 · Enter 进入节点（开 CLI 窗口）· r 刷新 · q 退出
+          ↑↓ 选择 · Enter 进入节点（开 CLI 窗口）· s 同步最新代码: {syncMode ? "开" : "关"} · r 刷新 · q 退出
         </Text>
       </Box>
       {status && (

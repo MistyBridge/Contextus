@@ -505,6 +505,105 @@ export function commitOf(cwd: string, nodeUuid: string): string | null {
   return loadIndex(cwd).get(nodeUuid) ?? null;
 }
 
+// ---------- M2：恢复与查询 + 维护通道 ----------
+
+/** 产生指定 commit 的会话（尾注 Node）；无尾注 → null（非会话提交） */
+export function sessionOfCommit(cwd: string, sha: string): Session | null {
+  const body = git(["log", "-1", "--format=%B", sha], cwd);
+  const m = body.match(/^Node: ([0-9a-f-]{36})/m);
+  if (!m) return null;
+  return listSessions(cwd).find((s) => s.node_uuid === m[1]) ?? null;
+}
+
+/** 两个会话的代码世界 diff（排除 .contextus） */
+export function diffSessions(cwd: string, nodeA: string, nodeB: string): string {
+  const shaA = commitOf(cwd, nodeA);
+  const shaB = commitOf(cwd, nodeB);
+  if (!shaA) throw new Error(`节点无对应 commit: ${nodeA.slice(0, 8)}`);
+  if (!shaB) throw new Error(`节点无对应 commit: ${nodeB.slice(0, 8)}`);
+  return git(["diff", shaA, shaB, "--", ".", ":(exclude).contextus"], cwd);
+}
+
+/** 查看模式（T5）：detached 落位，不建线不提交——读历史不建提交（用户定调） */
+export function checkoutView(cwd: string, target: string): { commit: string; label: string } {
+  const dirty = git(["status", "--porcelain"], cwd)
+    .split("\n")
+    .filter((l) => l.trim() && !l.includes(".contextus/"));
+  if (dirty.length > 0) throw new Error(`工作区有未提交改动（${dirty.length} 项）——checkout 会覆盖，请先 stash/commit`);
+  let sha: string | null = null;
+  let label = target;
+  if (target === "last") {
+    const b = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd).trim();
+    if (b === "HEAD") throw new Error("HEAD 处于 detached 状态，last 不可用");
+    sha = git(["rev-parse", "--verify", `refs/context/${b}`], cwd, { allowFail: true }).trim() || null;
+    label = `世界线 ${b} 的 tip`;
+  } else if (commitOf(cwd, target)) {
+    sha = commitOf(cwd, target);
+    label = `节点 ${target.slice(0, 8)}`;
+  } else {
+    sha = git(["rev-parse", "--verify", `refs/context/${target}`], cwd, { allowFail: true }).trim() || null;
+    label = `世界线 ${target} 的 tip`;
+  }
+  if (!sha) throw new Error(`找不到节点/世界线: ${target}`);
+  // 只回退代码世界（.contextus 工作区保留——日志尾迹不被覆盖/拒绝）；
+  // --detach 不能带 path 参数 → 先按 pathspec 更新路径，再 update-ref 转 detached
+  git(["checkout", "-q", sha, "--", ".", ":(exclude).contextus"], cwd);
+  git(["update-ref", "--no-deref", "HEAD", sha], cwd); // 覆盖 symref 本身 → detached
+  return { commit: sha, label };
+}
+
+/** rename（仅 tip，T9）：改当前世界线 tip 的 commit 名称，保留尾注；审计日志 */
+export function renameTip(cwd: string, newSubject: string): { before: string; after: string; nodes: number } {
+  const branch = currentBranch(cwd);
+  const tip = git(["rev-parse", "--verify", `refs/context/${branch}`], cwd).trim();
+  const head = git(["rev-parse", "HEAD"], cwd).trim();
+  if (head !== tip) {
+    throw new Error(`当前不在世界线 ${branch} 的 tip（HEAD=${head.slice(0, 8)}，tip=${tip.slice(0, 8)}）——rename 仅限 tip（T9）`);
+  }
+  const old = git(["log", "-1", "--format=%B", tip], cwd);
+  const trailers = old
+    .split("\n")
+    .filter((l) => l.startsWith("Node:") || l.startsWith("Claude:") || l.startsWith("Decision:"));
+  const subject = newSubject.length <= 20 ? newSubject : newSubject.slice(0, 20);
+  git(["commit", "-q", "--amend", "--no-verify", "-m", `${subject}\n\n${trailers.join("\n")}`], cwd);
+  const after = git(["rev-parse", "HEAD"], cwd).trim();
+  git(["update-ref", `refs/context/${branch}`, after], cwd);
+  // 索引局部更新：指向旧 sha 的条目 → 新 sha（派生数据，R23）
+  const idx = loadIndex(cwd);
+  let nodes = 0;
+  for (const [u, s] of idx) if (s === tip) {
+    idx.set(u, after);
+    nodes += 1;
+  }
+  saveIndex(cwd, idx);
+  logEvent(cwd, "rename", { branch, before: tip, after, subject, nodes });
+  return { before: tip, after, nodes };
+}
+
+/** drop 世界线（T9）：删 heads+context 双 ref；节点仍可索引（孤儿）；审计日志 */
+export function dropWorldline(cwd: string, branch: string): { tip: string } {
+  const tip = git(["rev-parse", "--verify", `refs/context/${branch}`], cwd, { allowFail: true }).trim();
+  if (!tip) throw new Error(`世界线不存在: ${branch}`);
+  const headBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd).trim();
+  const headSha = git(["rev-parse", "HEAD"], cwd).trim();
+  if (headBranch === branch || headSha === tip) {
+    throw new Error(`世界线 ${branch} 正在使用（HEAD 在其上）——先 checkout 到别处再 drop`);
+  }
+  git(["update-ref", "-d", `refs/context/${branch}`], cwd);
+  git(["branch", "-q", "-D", branch], cwd, { allowFail: true });
+  logEvent(cwd, "drop", { branch, tip });
+  return { tip };
+}
+
+/** 同步指令（T8）：注入到物化链末尾的 user 消息，Agent 以只读 git 自行比较同步 */
+export function syncInstruction(histSha: string, latestSha: string): string {
+  return (
+    `【同步指令】工作区当前是历史节点 ${histSha} 的代码。` +
+    `请先用只读 git（如 git diff ${histSha} ${latestSha} --stat）比较它与最新会话 ${latestSha} 的代码状态，` +
+    `把工作区同步到最新代码状态（分批同步，并在回复中说明同步了什么），然后处理用户请求。`
+  );
+}
+
 // ---------- 提交监控（交互窗口，v3.1）----------
 
 export interface WatchState {
