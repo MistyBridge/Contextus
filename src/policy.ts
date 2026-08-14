@@ -99,9 +99,13 @@ export function entryDiff(base: string[], target: string[]): RuleDelta {
 }
 
 /**
- * 规则增量注入文本（base 快照 → 工作区当前）：
- * 新增 = 【规则新增】原文；修改 = 【规则更新】新文 + 【禁止】旧文；删除 = 【规则禁止】旧文。
- * 无差异 → null（版本一致不注入）。前缀 <contextus-rule> 使其不被识别为用户提问（节点锚定）。
+ * 规则增量注入文本（base 快照 → 工作区当前）——纠错通道（v3.2）：
+ * 生效靠 CLAUDE.md（system prompt 通道，不可见）；注入只保留【禁止】项，
+ * 中和历史上下文中嵌入的旧表述：修改 = 【规则更新】新文 + 【禁止】旧文；
+ * 删除 = 【规则禁止】旧文。纯新增 → null（CLAUDE.md 已覆盖，零注入完全不可见）。
+ * 无差异/无禁止项 → null 不注入。
+ * 载体为 assistant 类型记录（见 twin.ruleInjectionRecord）——
+ * 不能用 "<" 前缀 user 消息：Claude Code 会将其视为本地命令并从上下文排除（实测）。
  */
 export function buildRuleInjection(cwd: string, baseSha: string): string | null {
   const base = readPolicyAt(cwd, baseSha);
@@ -109,16 +113,44 @@ export function buildRuleInjection(cwd: string, baseSha: string): string | null 
   if (base.join("\n") === target.join("\n")) return null;
   const d = entryDiff(base, target);
   const parts: string[] = [];
-  for (const a of d.adds) parts.push(`【规则新增】${a}`);
   for (const u of d.updates) parts.push(`【规则更新】${u.next}　【禁止】${u.old}`);
   for (const r of d.removes) parts.push(`【规则禁止】${r}（已废止，禁止执行）`);
   if (parts.length === 0) return null;
-  return `<contextus-rule> 生效规则有更新（以下为最新规则增量，历史中的旧表述已被禁止）：\n` + parts.join("\n");
+  return `【Contextus 规则纠错】历史中的旧规则表述已被以下禁令中和：\n` + parts.join("\n");
 }
 
 /** 追加一条规则（工作区文件；随下一轮提交入库，O(1) 零全树遍历） */
 export function policyAppend(cwd: string, entry: string): void {
   const f = policyPath(cwd);
   fs.mkdirSync(path.dirname(f), { recursive: true });
-  fs.appendFileSync(f, (fs.existsSync(f) ? "" : "") + entry.trim() + "\n", "utf8");
+  fs.appendFileSync(f, entry.trim() + "\n", "utf8");
+  syncRulesToClaudeMd(cwd);
+}
+
+const RULES_START = "<!-- contextus:rules:start -->";
+const RULES_END = "<!-- contextus:rules:end -->";
+
+/**
+ * 规则生效通道（用户理想态：看不到但生效）：同步当前规则全文到 CLAUDE.md 标记区块。
+ * CLAUDE.md 是 Claude Code 的项目记忆文件——位于 system prompt（对话中不可见、
+ * 每次运行必然加载、享缓存断点），任何会话（含历史回放）自动生效当前规则。
+ */
+export function syncRulesToClaudeMd(cwd: string): void {
+  const entries = readPolicyWorktree(cwd);
+  const mdPath = path.join(cwd, "CLAUDE.md");
+  const block = entries.length
+    ? `${RULES_START}\n**Contextus 项目规则**（由 Contextus 管理；请用 sm policy 修改，勿手改本区块）\n\n${entries
+        .map((e, i) => `${i + 1}. ${e}`)
+        .join("\n")}\n\n${RULES_END}\n`
+    : "";
+  const existing = fs.existsSync(mdPath) ? fs.readFileSync(mdPath, "utf8") : "";
+  const sIdx = existing.indexOf(RULES_START);
+  const eIdx = existing.indexOf(RULES_END);
+  let next: string;
+  if (sIdx >= 0 && eIdx > sIdx) {
+    next = existing.slice(0, sIdx) + block + existing.slice(eIdx + RULES_END.length);
+  } else {
+    next = existing.trimEnd() + (existing.trimEnd() ? "\n\n" : "") + block;
+  }
+  fs.writeFileSync(mdPath, next, "utf8");
 }

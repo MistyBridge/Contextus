@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { git, catFileBatch } from "./git.js";
-import { buildRuleInjection, policyHash, readPolicyWorktree } from "./policy.js";
+import { buildRuleInjection, policyHash, readPolicyWorktree, syncRulesToClaudeMd } from "./policy.js";
 import { runClaude, runClaudeFresh } from "./claude.js";
 import { logEvent } from "./log.js";
 import { writeSession, type Session } from "./sessions.js";
@@ -67,6 +67,7 @@ export function twinInit(cwd: string): void {
   if (!fs.readFileSync(excl, "utf8").includes("/.contextus/.lock")) {
     fs.appendFileSync(excl, `\n# contextus\n${markers}`);
   }
+  syncRulesToClaudeMd(cwd); // 已有规则立即建立 CLAUDE.md 生效通道
   logEvent(cwd, "twin_init", {});
   if (!hasTrust(cwd)) {
     console.warn(
@@ -612,10 +613,10 @@ export function dropWorldline(cwd: string, branch: string): { tip: string } {
   return { tip };
 }
 
-/** 同步指令（T8）：注入到物化链末尾的 user 消息，Agent 以只读 git 自行比较同步 */
+/** 同步指令（T8）：注入到物化链末尾的 assistant 消息，Agent 以只读 git 自行比较同步 */
 export function syncInstruction(histSha: string, latestSha: string): string {
   return (
-    `<contextus-sync> 【同步指令】工作区当前是历史节点 ${histSha} 的代码。` +
+    `【Contextus 同步指令】工作区当前是历史节点 ${histSha} 的代码。` +
     `请先用只读 git（如 git diff ${histSha} ${latestSha} --stat）比较它与最新会话 ${latestSha} 的代码状态，` +
     `把工作区同步到最新代码状态（分批同步，并在回复中说明同步了什么），然后处理用户请求。`
   );
@@ -623,7 +624,7 @@ export function syncInstruction(histSha: string, latestSha: string): string {
 
 /**
  * 规则增量注入记录（T7）：base 快照 vs 工作区 Chunks 不一致 → 注入增量。
- * 内容以 <contextus-rule> 开头 → isQuestion 判定为 false，不影响节点锚定。
+ * 载体 = assistant 类型记录：必然显示、必然进上下文、天然不是「提问」（节点锚定不受影响）。
  * 无差异（版本一致）→ null 不注入。
  */
 export function ruleInjectionRecord(
@@ -635,13 +636,12 @@ export function ruleInjectionRecord(
   const text = buildRuleInjection(cwd, baseSha);
   if (!text) return null;
   return {
-    type: "user",
+    type: "assistant",
     uuid: randomUUID(),
     parentUuid,
     sessionId: sid,
     cwd,
-    promptId: randomUUID(),
-    message: { role: "user", content: text },
+    message: { role: "assistant", content: [{ type: "text", text }] },
   } as Record;
 }
 

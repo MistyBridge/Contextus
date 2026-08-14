@@ -13,6 +13,7 @@ import {
   policyHash,
   readPolicyWorktree,
   readPolicyAt,
+  syncRulesToClaudeMd,
 } from "../src/policy.js";
 import { twinInit, commitDelta, ruleInjectionRecord, loadIndex, listSessions } from "../src/twin.js";
 import { isQuestion, type Record } from "../src/records.js";
@@ -79,7 +80,7 @@ test("M3 集成：增量注入 + chunks_hash + 注入记录不扰乱锚定", () 
   const s1 = listSessions(cwd)[0];
   assert.equal(s1.chunks_hash, policyHash(readPolicyWorktree(cwd)), "session.chunks_hash = 当时规则哈希");
 
-  // v2：新增一条 + 修改一条 + 删除一条
+  // v2：新增一条 + 修改一条 + 删除一条（直接写文件后需手动同步 CLAUDE.md 通道）
   policyAppend(cwd, "规则三：提交前自查");
   const lines = readPolicyWorktree(cwd);
   fs.writeFileSync(
@@ -87,32 +88,34 @@ test("M3 集成：增量注入 + chunks_hash + 注入记录不扰乱锚定", () 
     lines.map((l) => (l.startsWith("规则一") ? "规则一：输出英文" : l)).filter((l) => !l.startsWith("规则二")).join("\n") + "\n",
     "utf8",
   );
+  syncRulesToClaudeMd(cwd);
 
-  // 注入 = base(第 1 轮 commit 的 Chunks 快照) vs 工作区
+  // 注入 = base(第 1 轮 commit 的 Chunks 快照) vs 工作区（v3.2：新增不注入，靠 CLAUDE.md 生效通道）
   const inj = buildRuleInjection(cwd, c1.sha)!;
-  assert.ok(inj.includes("【规则新增】规则三：提交前自查"), "新增注入");
+  assert.ok(!inj.includes("【规则新增】规则三"), "纯新增不注入（CLAUDE.md 通道已覆盖）");
   assert.ok(inj.includes("【规则更新】规则一：输出英文") && inj.includes("【禁止】规则一：输出中文"), "修改注入 + 禁止旧文");
   assert.ok(inj.includes("【规则禁止】规则二：写 docstring"), "删除注入");
+  // CLAUDE.md 生效通道：全文 + 标记区块
+  const md = fs.readFileSync(path.join(cwd, "CLAUDE.md"), "utf8");
+  assert.ok(md.includes("contextus:rules:start") && md.includes("规则一：输出英文") && md.includes("规则三：提交前自查"), "CLAUDE.md 含当前规则全文");
 
   // 版本一致 → 不注入
   const c1Rules = readPolicyAt(cwd, c1.sha);
-  assert.ok(buildRuleInjection(cwd, c1.sha) !== null, "有差异时注入");
-  // 把工作区改回与 c1 一致 → 不注入
-  fs.writeFileSync(path.join(cwd, ".contextus", "Chunks", "project_policy.md"), c1Rules.join("\n") + "\n", "utf8");
-  assert.equal(buildRuleInjection(cwd, c1.sha), null, "版本一致时不注入");
+  // 纯新增（相对 c1）→ 不注入
+  fs.writeFileSync(path.join(cwd, ".contextus", "Chunks", "project_policy.md"), [...c1Rules, "规则五：纯新增"].join("\n") + "\n", "utf8");
+  assert.equal(buildRuleInjection(cwd, c1.sha), null, "纯新增时零注入（完全不可见）");
   // 恢复 v2 内容供后续
-  policyAppend(cwd, "规则三：提交前自查");
   fs.writeFileSync(
     path.join(cwd, ".contextus", "Chunks", "project_policy.md"),
     "规则一：输出英文\n规则三：提交前自查\n",
     "utf8",
   );
 
-  // 注入记录不扰乱节点锚定（< 开头 → 非提问）
+  // 注入记录为 assistant 类型（非提问，节点锚定不受影响）
   const rec = ruleInjectionRecord(cwd, c1.sha, "s-9", a1.uuid)!;
   assert.ok(rec, "注入记录已生成");
   assert.equal(isQuestion(rec), false, "注入记录不被识别为用户提问（节点锚定不受影响）");
-  assert.ok(String(rec.message!.content).startsWith("<contextus-rule>"), "前缀 <contextus-rule>");
+  assert.equal(rec.type, "assistant", "注入载体 = assistant 记录（显示且进上下文）");
 
   // 第 2 轮提交：chunks_hash 更新为新规则
   const q2 = mkRec("user", "第二问", a1.uuid);
