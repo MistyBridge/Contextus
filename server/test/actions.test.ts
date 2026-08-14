@@ -94,6 +94,45 @@ test("enter tip：复用 live 会话；监控不提交单问；close 提交最�
   rmLiveDir(repo);
 });
 
+test("close 提交失败可重试：锁冲突保留窗口状态，解除后重试成功", async () => {
+  const repo = initTwinRepo(BASE);
+  const r1 = round("第一问 初始化", null);
+  const s1 = commitRound(repo, {
+    sid: "sid-retry", branch: "main", prompt: "第一问 初始化", records: r1, decision: "initial",
+  });
+  writeLive(repo, "sid-retry", r1);
+
+  const app = createApp({
+    cwd: repo,
+    spawnTerminal: () => "fake-terminal-cmd",
+    pollIntervalMs: 60_000,
+  });
+
+  // 进入 tip + 追加一轮
+  const entered = await app.inject({ method: "POST", url: `/api/nodes/${s1.node}/enter`, payload: {} });
+  assert.equal(entered.statusCode, 200);
+  const r2 = round("第二问 继续", s1.node);
+  appendLive(repo, "sid-retry", r2);
+
+  // 锁冲突 → close 失败（500），窗口状态保留
+  fs.writeFileSync(path.join(repo, ".contextus", ".lock"), JSON.stringify({ pid: 1, ts: new Date().toISOString() }));
+  const fail = await app.inject({ method: "POST", url: "/api/window/close" });
+  assert.equal(fail.statusCode, 500);
+  const stillActive = (await app.inject({ method: "GET", url: "/api/tree" })).json();
+  assert.ok(stillActive.activeWindow, "提交失败后窗口状态保留（可重试）");
+
+  // 解除锁 → 重试 close 成功提交
+  fs.rmSync(path.join(repo, ".contextus", ".lock"));
+  const retry = await app.inject({ method: "POST", url: "/api/window/close" });
+  assert.equal(retry.statusCode, 200);
+  assert.equal(retry.json().committed, true, "重试后最后一轮提交成功");
+
+  const snap = (await app.inject({ method: "GET", url: "/api/tree" })).json();
+  assert.equal(snap.nodes.length, 2, "树含重试提交的新节点");
+  await app.close();
+  rmLiveDir(repo);
+});
+
 test("enter 历史节点：回溯即分叉（物化上下文 + 新世界线 + 新会话文件）", async () => {
   const repo = initTwinRepo(BASE);
   const s1 = commitRound(repo, {

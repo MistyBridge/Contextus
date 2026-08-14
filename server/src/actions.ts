@@ -22,7 +22,7 @@ import {
 } from "../../src/twin.js";
 import type { Session } from "../../src/sessions.js";
 import type { Record } from "../../src/records.js";
-import type { ApiErrorKind, CloseResult, EnterResult, ViewResult } from "../../src/web-api.js";
+import type { ActiveWindowDto, ApiErrorKind, CloseResult, EnterResult, ViewResult } from "../../src/web-api.js";
 import type { EventHub } from "./events.js";
 
 /** 业务失败 → HTTP 错误映射（app.ts setErrorHandler 统一处理） */
@@ -56,8 +56,11 @@ export class SessionActions {
     private readonly spawnTerminal: SpawnTerminal = realSpawnTerminal,
   ) {}
 
-  activeWindow(): WindowHandle | null {
-    return this.window;
+  /** 仅返回 DTO 字段（watcher 是运行时句柄，不外泄进 JSON） */
+  activeWindow(): ActiveWindowDto | null {
+    const w = this.window;
+    if (!w) return null;
+    return { sid: w.sid, branch: w.branch, label: w.label, startedAt: w.startedAt };
   }
 
   /** 脏工作区守卫（R9）：只拦用户代码改动；.contextus 尾迹与 CLAUDE.md 规则区块不构成阻塞 */
@@ -214,14 +217,15 @@ export class SessionActions {
   close(): CloseResult {
     const w = this.window;
     if (!w) throw new ApiFail("无活动窗口", "bad-request");
-    this.window = null;
     const before = this.lastCommit;
     try {
       w.watcher.stop(); // 同步执行：若有未提交记录，onCommit 同步触发并广播
     } catch (e) {
+      // 提交失败（锁冲突等）时保留窗口状态：用户解除阻塞后可重试「提交并关闭」
       this.hub.broadcast({ type: "error", message: e instanceof Error ? e.message : String(e) });
       throw new ApiFail(e instanceof Error ? e.message : String(e), "internal");
     }
+    this.window = null;
     const committed = this.lastCommit !== before;
     this.hub.broadcast({ type: "window-closed", branch: w.branch, committed });
     return { branch: w.branch, committed, commit: committed ? this.lastCommit : null };

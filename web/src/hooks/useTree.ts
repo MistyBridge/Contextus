@@ -24,7 +24,14 @@ export function useTree() {
       setSnap(await fetchTree());
       setError(null);
     } catch (e) {
-      setError(e instanceof ApiClientError ? e : new ApiClientError(String(e), "internal"));
+      if (e instanceof ApiClientError) {
+        setError(e);
+      } else if (e instanceof TypeError) {
+        // fetch 网络层失败（服务未启动/已停止）——避免把 "Failed to fetch" 甩给用户
+        setError(new ApiClientError("本地服务未连接（请确认 web server 已启动）", "internal"));
+      } else {
+        setError(new ApiClientError(String(e), "internal"));
+      }
     }
   }, []);
 

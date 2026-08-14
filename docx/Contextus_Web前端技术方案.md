@@ -1,6 +1,6 @@
 # Contextus Web 前端技术方案 v1.0（M1 树视图）
 
-> 2026-08-14 · UI前端工程师 · 状态：**D1/D6 已拍板，进入设计快照阶段**
+> 2026-08-14 · UI前端工程师 · 状态：**M1a/M1b 完成（全测通过）；M1c 真实窗口闭环验收中**
 > 上游：MVP 技术方案 v3.2（M0~M4 已定稿）、UI 前端岗位 JD、技术栈定稿（commit 70e2174）
 
 ---
@@ -211,11 +211,11 @@ M1 不做的（挂接点预告）：diff 视图（M2：@git-diff-view 或 Monaco
 
 ## 5. M1 任务拆解
 
-| 任务 | 内容 | 产出 |
+| 任务 | 内容 | 状态 |
 |------|------|------|
-| **M1a server** | Fastify 骨架 + 五个端点 + SSE + 指纹轮询 + 锁守卫 | server/ 全量 + 集成测试（node:test，沿用 tests 合成仓库零 API 约定：twin-init + commitDelta 造数据，不跑真 claude） |
-| **M1b web 树** | Vite 骨架 + layoutTree 纯函数 + React Flow 画布 + 详情面板 + 双主题 token | web/ 骨架 + vitest 布局单测 |
-| **M1c 闭环** | enter/view 端到端 + SSE 实时刷新 + toast/状态灯 + 窗口面板 | 全链路手动验收 |
+| **M1a server** | Fastify 骨架 + 五个端点 + SSE + 指纹轮询 + 锁守卫 | ✅ 9/9 集成测试通过 |
+| **M1b web 树** | Vite 骨架 + layoutTree 纯函数 + React Flow 画布 + 详情面板 + 双主题 token | ✅ 5/5 单测 + 构建 + 冒烟通过；拖动/重置/右键菜单（D8）、tip 统一绿（D9）已拍板落地 |
+| **M1c 闭环** | enter/view 端到端 + SSE 实时刷新 + toast/状态灯 + 窗口面板 | 🔄 守卫语义已修正（tip 放行脏工作区，b47dcf1）；真实窗口闭环验收进行中（狗食仓库） |
 
 测试约定（对齐现有 tests/）：合成仓库独立命名空间（`.tmp-m1-*`）、`mkRec` 合成记录、零 API；web 侧 vitest 只测纯函数与组件，不跑真 git。
 

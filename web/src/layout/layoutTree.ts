@@ -20,6 +20,7 @@ export interface LaneInfo {
 
 export type LayoutNode = {
   id: string; // nodeUuid
+  parentUuid: string | null;
   x: number;
   y: number;
   row: number; // 全局时间行
@@ -70,6 +71,7 @@ export function layoutTree(snap: TreeSnapshot): TreeLayout {
     const lane = laneByBranch.get(n.branchId) ?? { index: -1, orphan: true, x: 0 };
     return {
       id: n.nodeUuid,
+      parentUuid: n.parentUuid,
       x: lane.x,
       y: row * ROW_HEIGHT,
       row,

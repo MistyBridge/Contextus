@@ -7,6 +7,7 @@ import type { LayoutNode } from "../layout/layoutTree";
 
 export type NodeCardData = LayoutNode & {
   selected: boolean;
+  hover: "self" | "path" | null; // self = 悬停本卡；path = 悬停后代时处于祖先链上
   onSelect: (nodeUuid: string) => void;
 };
 
@@ -24,7 +25,7 @@ function DecisionIcon({ decision }: { decision: LayoutNode["decision"] }) {
 }
 
 export default function NodeCard({ data }: NodeProps<Node<NodeCardData>>) {
-  const { userInput, sha, createdAt, isTip, orphan, decision, selected, onSelect } = data;
+  const { userInput, sha, createdAt, isTip, orphan, decision, selected, hover, onSelect } = data;
   return (
     <div
       onClick={(e) => {
@@ -34,7 +35,8 @@ export default function NodeCard({ data }: NodeProps<Node<NodeCardData>>) {
       className={[
         "relative flex h-16 w-[228px] cursor-pointer flex-col justify-center gap-1 rounded-card border bg-surface px-3 shadow-1",
         "transition-[border-color,box-shadow] hover:bg-surface-2",
-        selected ? "border-accent shadow-2" : "border-border",
+        selected ? "border-accent shadow-2" : hover === "self" ? "border-text-2" : "border-border",
+        hover === "path" && !selected ? "bg-surface-2" : "",
         isTip ? "ring-2 ring-inset" : "",
         orphan ? "opacity-60" : "",
       ].join(" ")}

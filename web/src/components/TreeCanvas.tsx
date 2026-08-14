@@ -2,7 +2,7 @@
 // 节点/边坐标默认来自 layoutTree 纯函数；节点可自由拖动（画布级摆位，不改数据），
 // 拖动位置在会话内记忆，「重置布局」回到算法泳道。右键节点出上下文菜单。
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyNodeChanges,
   Background,
@@ -13,6 +13,7 @@ import {
   type Node,
   type NodeChange,
   type NodeProps,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ArrowCounterClockwise, ArrowSquareOut, Copy, Eye, GitFork } from "@phosphor-icons/react";
@@ -81,6 +82,8 @@ function deriveNodes(
   selected: string | null,
   overrides: Map<string, { x: number; y: number }>,
   onSelect: (nodeUuid: string) => void,
+  hoverPath: Set<string>,
+  hovered: string | null,
 ): Node[] {
   const nodes: Node[] = [];
 
@@ -128,6 +131,7 @@ function deriveNodes(
       data: {
         ...n,
         selected: selected === n.id,
+        hover: hovered === n.id ? "self" : hoverPath.has(n.id) ? "path" : null,
         onSelect,
       } satisfies NodeCardData,
       zIndex: 10,
@@ -184,6 +188,9 @@ export default function TreeCanvas({ layout, selected, onSelect, onEnter, onView
   const userPos = useRef(new Map<string, { x: number; y: number }>());
   const [hasOverrides, setHasOverrides] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; node: LayoutNode } | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const instance = useRef<ReactFlowInstance | null>(null);
+  const fitted = useRef(false);
 
   const [rfNodes, setRfNodes] = useNodesState<Node>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -195,11 +202,33 @@ export default function TreeCanvas({ layout, selected, onSelect, onEnter, onView
     [setRfNodes],
   );
 
-  // 布局/选中变化 → 重派生（拖动覆盖优先；选中态更新卡片样式）
+  // hover 祖先链（自含 + 沿 parentUuid 回溯的祖先），供卡片链路高亮
+  const hoverPath = useMemo(() => {
+    if (!hovered) return new Set<string>();
+    const byId = new Map(layout.nodes.map((n) => [n.id, n]));
+    const s = new Set<string>();
+    let cur: string | undefined = hovered;
+    while (cur) {
+      s.add(cur);
+      cur = byId.get(cur)?.parentUuid ?? undefined;
+    }
+    return s;
+  }, [layout, hovered]);
+
+  // 布局/选中/悬停变化 → 重派生（拖动覆盖优先；选中态更新卡片样式）
   useEffect(() => {
-    setRfNodes(deriveNodes(layout, selected, userPos.current, onSelect));
+    setRfNodes(deriveNodes(layout, selected, userPos.current, onSelect, hoverPath, hovered));
     setRfEdges(deriveEdges(layout));
-  }, [layout, selected, onSelect, setRfNodes, setRfEdges]);
+  }, [layout, selected, onSelect, hoverPath, hovered, setRfNodes, setRfEdges]);
+
+  // 一次性 fitView：首次有节点时适配视口；此后布局/树刷新不再拽回用户视角
+  useEffect(() => {
+    if (!instance.current) return;
+    if (!fitted.current && rfNodes.some((n) => n.type === "ctx")) {
+      fitted.current = true;
+      requestAnimationFrame(() => instance.current?.fitView({ padding: 0.2 }));
+    }
+  }, [rfNodes]);
 
   const handleDragStop = useCallback((_e: MouseEvent | TouchEvent, node: Node) => {
     if (node.type !== "ctx") return;
@@ -210,8 +239,9 @@ export default function TreeCanvas({ layout, selected, onSelect, onEnter, onView
   const resetLayout = useCallback(() => {
     userPos.current.clear();
     setHasOverrides(false);
-    setRfNodes(deriveNodes(layout, selected, userPos.current, onSelect));
-  }, [layout, selected, onSelect, setRfNodes]);
+    fitted.current = false; // 重置后重新适配视口（回到算法泳道视角）
+    setRfNodes(deriveNodes(layout, selected, userPos.current, onSelect, hoverPath, hovered));
+  }, [layout, selected, onSelect, hoverPath, hovered, setRfNodes]);
 
   const handleContextMenu = useCallback(
     (e: ReactMouseEvent, node: Node) => {
@@ -245,12 +275,17 @@ export default function TreeCanvas({ layout, selected, onSelect, onEnter, onView
         nodes={rfNodes}
         edges={rfEdges}
         nodeTypes={NODE_TYPES}
+        onInit={(inst) => {
+          instance.current = inst;
+        }}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeDragStop={handleDragStop}
         onNodeContextMenu={handleContextMenu}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
+        onNodeMouseEnter={(_e, node) => {
+          if (node.type === "ctx") setHovered(node.id);
+        }}
+        onNodeMouseLeave={() => setHovered(null)}
         minZoom={0.3}
         maxZoom={1.5}
         nodesConnectable={false}
