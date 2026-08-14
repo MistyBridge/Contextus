@@ -287,7 +287,7 @@ function cmdTwinStatus(cwd: string): void {
   const branch = git(["rev-parse", "--abbrev-ref", "HEAD"], cwd).trim();
   const dirty = git(["status", "--porcelain"], cwd)
     .split("\n")
-    .filter((l) => l.trim() && !l.includes(".contextus/"));
+    .filter((l) => l.trim() && !l.includes(".contextus/") && !l.includes("CLAUDE.md"));
   console.log(`HEAD: ${branch === "HEAD" ? "detached（查看模式）" : `heads/${branch}`}`);
   if (branch !== "HEAD") {
     const tip = git(["rev-parse", "--verify", `refs/context/${branch}`], cwd, { allowFail: true }).trim();

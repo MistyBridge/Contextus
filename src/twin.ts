@@ -551,7 +551,7 @@ export function diffSessions(cwd: string, nodeA: string, nodeB: string): string 
 export function checkoutView(cwd: string, target: string): { commit: string; label: string } {
   const dirty = git(["status", "--porcelain"], cwd)
     .split("\n")
-    .filter((l) => l.trim() && !l.includes(".contextus/"));
+    .filter((l) => l.trim() && !l.includes(".contextus/") && !l.includes("CLAUDE.md"));
   if (dirty.length > 0) throw new Error(`工作区有未提交改动（${dirty.length} 项）——checkout 会覆盖，请先 stash/commit`);
   let sha: string | null = null;
   let label = target;
