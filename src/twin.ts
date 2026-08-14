@@ -268,8 +268,9 @@ export function commitDelta(
   const release = acquireLock(cwd);
   try {
     const codeBefore = git(["rev-parse", "HEAD"], cwd).trim();
-    const question = opts.records.find((r) => isQuestion(r)) ?? opts.records[0];
-    const nodeUuid = question.uuid ?? null;
+    // 无提问的增量（纯注入记录）不创建会话节点——不产生垃圾树节点
+    const question = opts.records.find((r) => isQuestion(r)) ?? null;
+    const nodeUuid = question?.uuid ?? null;
     const tip = tipSession(cwd, opts.branch);
 
     // 写记录文件（序号单调递增）
@@ -285,7 +286,7 @@ export function commitDelta(
       const wl = readPolicyWorktree(cwd);
       writeSession(cwd, {
         node_uuid: nodeUuid,
-        parent_uuid: question.parentUuid ?? null,
+        parent_uuid: question!.parentUuid ?? null,
         root_uuid: tip?.root_uuid ?? nodeUuid,
         branch_id: opts.branch,
         decision: opts.decision,
@@ -302,7 +303,11 @@ export function commitDelta(
     logEvent(cwd, "commit", { decision: opts.decision, node: nodeUuid, records: opts.records.length });
 
     // 提交（--no-verify：hooks 属代码世界政策，turn 提交是状态快照 R8）
-    const subject = opts.prompt.length <= 20 ? opts.prompt : opts.prompt.slice(0, 20);
+    const subject = nodeUuid
+      ? opts.prompt.length <= 20
+        ? opts.prompt
+        : opts.prompt.slice(0, 20)
+      : "[contextus 注入]";
     const body = nodeUuid
       ? `\n\nNode: ${nodeUuid}\nClaude: ${opts.sid}\nDecision: ${opts.decision}`
       : `\n\nClaude: ${opts.sid}\nDecision: ${opts.decision}`;
