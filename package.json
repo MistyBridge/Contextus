@@ -8,11 +8,19 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "server": "npm run dev -w server",
+    "server:test": "npm run test -w server",
+    "web": "npm run dev -w web",
+    "web:test": "npm run test -w web"
   },
+  "workspaces": [
+    "server",
+    "web"
+  ],
   "dependencies": {
     "diff": "^8.0.0",
     "ink": "^5.2.1",

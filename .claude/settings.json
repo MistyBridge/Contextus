@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git branch:*)",
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)",
+      "Bash(git reset:*)",
+      "Bash(git stash:*)",
+      "Bash(git tag:*)",
+      "Bash(git cherry-pick:*)",
+      "Bash(git revert:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git fetch:*)",
+      "Bash(git clean:*)",
+      "Bash(git rm:*)",
+      "Bash(git mv:*)",
+      "Bash(git apply:*)",
+      "Bash(git am:*)",
+      "Bash(git init:*)",
+      "Bash(sm:*)",
+      "Bash(sm.py:*)",
+      "Bash(sm.js:*)",
+      "Edit(.git/**)",
+      "Write(.git/**)",
+      "Edit(.contextus/records/**)",
+      "Write(.contextus/records/**)",
+      "Edit(.contextus/sessions/**)",
+      "Write(.contextus/sessions/**)",
+      "Edit(.contextus/logs/**)",
+      "Write(.contextus/logs/**)",
+      "Edit(.contextus/index/**)",
+      "Write(.contextus/index/**)"
+    ]
+  }
+}
