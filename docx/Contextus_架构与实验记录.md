@@ -110,6 +110,8 @@ d/e 等"兄弟"消息不在祖先链上，天然被排除；`--resume` 恢复时
 | **`--debug` 破坏恢复** | 报 `No deferred tool marker found` | 排查 `--resume` 问题时勿用 `--debug`；普通恢复正常 |
 | 无头权限被忽略 | `Ignoring 143 permissions.allow entries...` | 该目录须先交互式接受信任（或改 `.claude.json` 的 `hasTrustDialogAccepted`） |
 | 信任接受需真实 TTY（2026-08-13 补充） | 经 `!` 前缀/管道执行 `claude` 时 stdin 非 TTY → 自动退化为 `--print` 模式（报 `Input must be provided...`），信任对话框不会出现 | 必须在真实终端窗口交互式运行 `claude` 接受信任；twin-init 已内置 hasTrustDialogAccepted 检测并警告 |
+| **Claude Code 记忆库 = 跨世界线共享知识层（2026-08-14 实测）** | 记忆目录（`~/.claude/projects/<cwd编码>/memory/`）按 cwd 共享于所有世界线：`MEMORY.md` 索引**常驻注入**（每条一行指针），文件本体**按需检索**（Read 工具）——检索型、非累积型，上下文成本极低 | 分层语义：记忆 = 共享知识层（对应立项书 a b / Experience Chunk 的现成载体），会话文件 = 世界线私有层（Contextus 版本化）。记忆自主读写无版本无审计（MVP 边界接受；Phase 2 可把记忆目录纳入 Contextus 版本管理） |
+| **CLAUDE.md 规则通道（2026-08-14 实测）** | 规则全文同步进仓库 CLAUDE.md 标记区块 → system prompt 注入，对话中不可见、每次运行必然加载（中文问英文答实测生效）；`<` 前缀 user 消息被 Claude Code 视为本地命令并**从上下文排除**（注入载体必须用 assistant 记录） | 规则生效走 CLAUDE.md（看不到但生效）；注入仅保留【禁止】纠错项（修改/删除规则时中和历史旧表述） |
 
 ---
 
