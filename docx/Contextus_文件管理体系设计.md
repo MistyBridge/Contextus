@@ -54,7 +54,7 @@
 └── settings.local.json   # 本地覆盖（不入库）
 ```
 
-（历史遗留：本仓库的 `.claudes/UI前端工程师/.claude/` 是早期多 agent 工作区形态，将按新约定迁移）
+**`.claudes/` 不是 Contextus 约定**（用户澄清 2026-08-15）：它只是用户存放多个 `.claude` 目录的普通文件夹，Contextus 不读它、不依赖它、也不废弃它——是否保留/入库完全由用户决定。
 
 ### 2.2 提案布局（对齐 Claude Code 插件原生约定）
 
@@ -96,12 +96,12 @@ agent级 随 agents 定义（deny 格式）       # 岗位级差异权限
 | `.claude/settings.json`（项目级 deny） | ✅ | 已随狗食首轮入库 |
 | `.claude/settings.local.json` | ❌ | 本地覆盖（按 Claude Code 约定） |
 | `.claude/agents,skills,commands` | ✅ | 插件内容随项目入库 |
-| `.claudes/**`（历史遗留） | 迁移后废弃 | 见 §4 |
+| `.claudes/**`（用户的普通文件夹） | 用户决定 | Contextus 不依赖、不废弃 |
 
 ## 4. 落地顺序
 
-1. **现在（server 侧，小改动）**：`/api/workspace` 读 `.claude/agents/` 列 agent（文件名即 agent 名）；`agents/<name>.md` 约定文档化
-2. **Phase 2**：`.claudes/` → `.claude/agents/` 迁移、世界线注解（**已拍板进近期规划**：`worldlines/<branch>.json` 的 description 供 UI 列头显示）、agent 字段打标（W2）、agent 级权限（deny 格式）
+1. **现在（已完成 ✅）**：`/api/workspace` 读 `.claude/agents/` 列 agent（文件名即 agent 名）；`agents/<name>.md` 约定文档化
+2. **Phase 2**：世界线注解（**已拍板进近期规划**：`worldlines/<branch>.json` 的 description 供 UI 列头显示）、agent 字段打标（W2）、agent 级权限（deny 格式）
 3. `twin.json`：等 PM 指令碰核心层时随 twin-init 一并写入
 
 ## 5. 已拍板记录
