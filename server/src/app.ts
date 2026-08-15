@@ -52,6 +52,20 @@ export function createApp(opts: AppOptions): FastifyInstance {
     worldlines: isTwin(opts.cwd) ? worldlines(opts.cwd) : [],
   }));
 
+  // 工作区信息（文件管理体系 v1.1）：agent 清单 = .claude/agents/ 下的定义文件名
+  app.get("/api/workspace", async () => {
+    const agentsDir = path.join(opts.cwd, ".claude", "agents");
+    let agents: string[] = [];
+    if (fs.existsSync(agentsDir)) {
+      agents = fs
+        .readdirSync(agentsDir)
+        .filter((f) => f.endsWith(".md"))
+        .map((f) => f.replace(/\.md$/, ""))
+        .sort();
+    }
+    return { cwd: opts.cwd, isTwin: isTwin(opts.cwd), agents };
+  });
+
   app.get("/api/tree", async () => {
     if (!isTwin(opts.cwd)) {
       throw new ApiFail("当前仓库未启用 Twin（请先运行 sm twin-init）", "not-twin");

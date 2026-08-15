@@ -1,8 +1,8 @@
 // 树状态：快照 + SSE 事件驱动重拉（D4 实时机制，技术方案 §3.3）
 // commit 与 tree-changed 可能 2s 内先后到达 → 防抖合并重拉，避免双请求
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiClientError, fetchTree, subscribeEvents } from "../api/client";
-import type { ServerEvent, TreeSnapshot } from "../../../src/web-api";
+import { ApiClientError, fetchTree, fetchWorkspace, subscribeEvents } from "../api/client";
+import type { ServerEvent, TreeSnapshot, WorkspaceDto } from "../../../src/web-api";
 
 export interface CommitToast {
   id: number;
@@ -13,6 +13,7 @@ export interface CommitToast {
 
 export function useTree() {
   const [snap, setSnap] = useState<TreeSnapshot | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceDto | null>(null);
   const [error, setError] = useState<ApiClientError | null>(null);
   const [online, setOnline] = useState(false); // SSE 连接状态（状态灯语义）
   const [toasts, setToasts] = useState<CommitToast[]>([]);
@@ -21,7 +22,9 @@ export function useTree() {
 
   const refresh = useCallback(async () => {
     try {
-      setSnap(await fetchTree());
+      const [tree, ws] = await Promise.all([fetchTree(), fetchWorkspace()]);
+      setSnap(tree);
+      setWorkspace(ws);
       setError(null);
     } catch (e) {
       if (e instanceof ApiClientError) {
@@ -69,5 +72,5 @@ export function useTree() {
     };
   }, [refresh, refreshSoon, dismissToast]);
 
-  return { snap, error, online, toasts, dismissToast, refresh };
+  return { snap, workspace, error, online, toasts, dismissToast, refresh };
 }

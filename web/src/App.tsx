@@ -25,7 +25,7 @@ function CanvasSkeleton() {
 }
 
 export default function App() {
-  const { snap, error, online, toasts, dismissToast, refresh } = useTree();
+  const { snap, workspace, error, online, toasts, dismissToast, refresh } = useTree();
   const [selected, setSelected] = useState<string | null>(null);
   const [syncMode, setSyncMode] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -93,6 +93,7 @@ export default function App() {
     <div className="flex h-dvh flex-col bg-bg text-text">
       <TopBar
         snap={snap}
+        workspace={workspace}
         online={online}
         windowActive={windowActive}
         theme={theme}

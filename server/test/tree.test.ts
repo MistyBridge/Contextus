@@ -1,6 +1,7 @@
 // M1a 树快照 API 测试（零 API）：多世界线 / tip / 孤儿 / fork 边 / HEAD 落位 / 未启用 Twin
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import { createApp } from "../src/app.js";
 import type { TreeSnapshot } from "../../src/web-api.js";
@@ -81,6 +82,22 @@ test("树快照：多世界线 + fork 边 + tip + 孤儿 + HEAD 落位", async (
 
   // activeWindow 空
   assert.equal(snap.activeWindow, null);
+  await app.close();
+});
+
+test("/api/workspace：.claude/agents 清单（非 .md 忽略，排序）", async () => {
+  const repo = initTwinRepo(path.join(ROOT, ".tmp-m1-ws-repo"));
+  fs.mkdirSync(path.join(repo, ".claude", "agents"), { recursive: true });
+  fs.writeFileSync(path.join(repo, ".claude", "agents", "PM.md"), "---\nname: PM\n---\n");
+  fs.writeFileSync(path.join(repo, ".claude", "agents", "UI前端工程师.md"), "x");
+  fs.writeFileSync(path.join(repo, ".claude", "agents", "notes.txt"), "非 md 忽略");
+
+  const app = createApp({ cwd: repo, pollIntervalMs: 60_000 });
+  const res = await app.inject({ method: "GET", url: "/api/workspace" });
+  assert.equal(res.statusCode, 200);
+  const ws = res.json();
+  assert.equal(ws.isTwin, true);
+  assert.deepEqual(ws.agents, ["PM", "UI前端工程师"]);
   await app.close();
 });
 

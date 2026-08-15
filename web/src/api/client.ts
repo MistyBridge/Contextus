@@ -1,5 +1,5 @@
 // REST + SSE 客户端（浏览器侧）。核心层类型仅 import type——禁止值导入进浏览器
-import type { ApiError, CloseResult, EnterResult, ServerEvent, TreeSnapshot, ViewResult } from "../../../src/web-api";
+import type { ApiError, CloseResult, EnterResult, ServerEvent, TreeSnapshot, ViewResult, WorkspaceDto } from "../../../src/web-api";
 
 export class ApiClientError extends Error {
   constructor(
@@ -39,6 +39,15 @@ export async function fetchTree(): Promise<TreeSnapshot> {
     throw new ApiClientError(e.error, e.kind, e.detail);
   }
   return (await res.json()) as TreeSnapshot;
+}
+
+export async function fetchWorkspace(): Promise<WorkspaceDto> {
+  const res = await fetch("/api/workspace");
+  if (!res.ok) {
+    const e = await readError(res);
+    throw new ApiClientError(e.error, e.kind, e.detail);
+  }
+  return (await res.json()) as WorkspaceDto;
 }
 
 export function enterNode(nodeUuid: string, syncMode: boolean): Promise<EnterResult> {

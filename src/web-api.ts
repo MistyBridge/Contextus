@@ -85,3 +85,10 @@ export type ServerEvent =
   | { type: "tree-changed" } // tip 指纹变化兜底（外部提交/rename/drop）
   | { type: "window-closed"; branch: string; committed: boolean }
   | { type: "error"; message: string };
+
+/** 工作区信息（文件管理体系 v1.1：agent 清单 = .claude/agents/ 文件名） */
+export interface WorkspaceDto {
+  cwd: string;
+  isTwin: boolean;
+  agents: string[]; // 排序后的 agent 名（.claude/agents/<name>.md）
+}
